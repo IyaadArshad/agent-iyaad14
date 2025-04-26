@@ -1,12 +1,64 @@
 "use client";
 import Image from "next/image";
 import { Sidebar } from "@/components/Sidebar";
+import { useState, useRef, useEffect } from "react";
 
 export default function Home() {
   const conversationHistory = [
     { id: "1", title: "Conversation 1", date: new Date() },
     { id: "2", title: "Conversation 2", date: new Date() },
   ];
+
+  const [inputValue, setInputValue] = useState("");
+  const [isMultiline, setIsMultiline] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Improved height adjustment function
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset the height first
+      textarea.style.height = "auto";
+
+      // Get the new scroll height and set it
+      const scrollHeight = textarea.scrollHeight;
+      textarea.style.height = scrollHeight + "px";
+
+      // Count actual newlines in the content
+      const newlineCount = (inputValue.match(/\n/g) || []).length;
+
+      // Update multiline state based on actual content or scrollHeight
+      setIsMultiline(newlineCount > 0 || scrollHeight > 65);
+
+      // Handle the empty case explicitly
+      if (inputValue === "") {
+        textarea.style.height = "56px"; // Reset to minimum height
+        setIsMultiline(false);
+      }
+    }
+  };
+
+  // Update height whenever input value changes
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [inputValue]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      setInputValue((prev) => prev + "\n");
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (inputValue.trim()) {
+        console.log("Message to send:", inputValue);
+        setInputValue("");
+      }
+    } else if (e.key === "Backspace" && inputValue.endsWith("\n")) {
+      // Handle backspace at end of line properly
+      setInputValue((prev) => prev.slice(0, -1));
+      e.preventDefault();
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -57,15 +109,35 @@ export default function Home() {
               Type a message to start your conversation
             </p>
 
-            {/* Input box */}
+            {/* Expandable input box */}
             <div className="w-5/5 hover:w-5/4 focus-within:w-5/4 transition-all duration-350 mb-8">
               <div className="relative">
-                <input
-                  type="text"
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder="Type something great here..."
-                  className="w-full p-4 border border-gray-300 rounded-full focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-colors"
+                  className={`w-full p-4 border border-gray-300 focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-all duration-200 resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
+                    isMultiline ? "rounded-2xl" : "rounded-full"
+                  }`}
+                  rows={1}
+                  style={{
+                    paddingRight: "3rem",
+                    lineHeight: "1.5",
+                  }}
                 />
-                <button className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#1A479D]">
+                <button
+                  className={`absolute right-3 text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
+                    isMultiline ? "top-4" : "top-1/2 transform -translate-y-1/2"
+                  }`}
+                  onClick={() => {
+                    if (inputValue.trim()) {
+                      console.log("Message to send:", inputValue);
+                      setInputValue("");
+                    }
+                  }}
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="24"
