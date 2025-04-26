@@ -58,12 +58,12 @@ export default function Home() {
             </p>
 
             {/* Input box */}
-            <div className="w-full mb-8">
+            <div className="w-5/5 hover:w-5/4 focus-within:w-5/4 transition-all duration-350 mb-8">
               <div className="relative">
                 <input
                   type="text"
                   placeholder="Type something great here..."
-                  className="w-full p-4 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-colors"
+                  className="w-full p-4 border border-gray-300 rounded-full focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-colors"
                 />
                 <button className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#1A479D]">
                   <svg
