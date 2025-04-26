@@ -168,7 +168,7 @@ export default function Home() {
                     }}
                   />
                   <button
-                    className={`absolute right-3 text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
+                    className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
                       isMultiline
                         ? "top-4"
                         : "top-1/2 transform -translate-y-1/2"
@@ -201,55 +201,58 @@ export default function Home() {
           </main>
         ) : (
           <div className="flex-1 flex flex-col h-full">
-            {/* Messages area */}
-            <div
-              className="flex-1 overflow-y-auto px-3 sm:px-6 py-6"
-              style={{ minHeight: 0 }}
-            >
-              <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${
-                      msg.sender === "user" ? "justify-end" : "justify-start"
-                    } w-full`}
-                  >
+            {/* Messages area - now with fixed height and scrollable */}
+            <div className="flex-grow flex justify-center px-3 sm:px-6 py-4 overflow-hidden">
+              <div 
+                className="w-full max-w-6xl h-[calc(100vh-180px)] overflow-y-auto px-1 py-2 rounded-lg bg-white"
+                style={{ scrollbarWidth: 'thin' }}
+              >
+                <div className="flex flex-col gap-6 w-full mx-auto">
+                  {messages.map((msg) => (
                     <div
-                      className={`px-4 py-3 rounded-2xl shadow-sm max-w-[80%] break-words ${
-                        msg.sender === "user"
-                          ? "bg-[#EBF2FF] text-[#1A479D] rounded-br-md mr-1"
-                          : "bg-gray-100 text-gray-900 rounded-bl-md ml-1"
-                      }`}
+                      key={msg.id}
+                      className={`flex ${
+                        msg.sender === "user" ? "justify-end" : "justify-start"
+                      } w-full`}
                     >
-                      {msg.text}
-                    </div>
-                  </div>
-                ))}
-                {isTyping && (
-                  <div className="flex justify-start w-full">
-                    <div className="px-4 py-3 rounded-2xl shadow-sm bg-gray-100 ml-1">
-                      <div className="flex space-x-1">
-                        <div
-                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        ></div>
+                      <div
+                        className={`${
+                          msg.sender === "user"
+                            ? "px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%]"
+                            : "px-3 py-2 text-gray-900 rounded-lg max-w-[85%]"
+                        } break-words`}
+                      >
+                        {msg.text}
                       </div>
                     </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
+                  ))}
+                  {isTyping && (
+                    <div className="flex justify-start w-full">
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg">
+                        <div className="flex space-x-1">
+                          <div
+                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                            style={{ animationDelay: "0ms" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                            style={{ animationDelay: "150ms" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                            style={{ animationDelay: "300ms" }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
               </div>
             </div>
-            {/* Fixed input at bottom */}
-            <div className="w-full px-6 sm:px-10 py-4 bg-white border-t border-gray-100">
+            
+            {/* Fixed input at bottom - remained unchanged */}
+            <div className="w-full px-6 sm:px-10 py-4 bg-white">
               <div className="relative w-full max-w-6xl mx-auto">
                 <textarea
                   ref={textareaRef}
@@ -267,7 +270,7 @@ export default function Home() {
                   }}
                 />
                 <button
-                  className={`absolute right-3 text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
+                  className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
                     isMultiline
                       ? "top-4"
                       : "top-1/2 transform -translate-y-1/2"
@@ -296,8 +299,6 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            {/* Adjust spacer height */}
-            <div className="h-[20px]" />
           </div>
         )}
 
