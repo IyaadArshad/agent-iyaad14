@@ -89,7 +89,13 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="p-4 text-center text-gray-500 text-sm">
-          Powered by FiNAC AI
+          <p className="text-sm text-gray-400 mt-2 text-center">
+            Powered by FiNAC AI. <br />
+            Icons by{" "}
+            <a className="underline" href="https://icons8.com" target="_blank">
+              Icons8
+            </a>
+          </p>
         </footer>
       </div>
     </div>
