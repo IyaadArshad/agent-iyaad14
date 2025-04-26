@@ -1,5 +1,5 @@
 import React from "react";
-import { FolderIcon, SearchIcon, BookIcon, FilePlus2Icon } from "lucide-react";
+import { FolderIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
