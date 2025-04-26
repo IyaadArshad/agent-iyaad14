@@ -201,102 +201,106 @@ export default function Home() {
           </main>
         ) : (
           <div className="flex-1 flex flex-col h-full">
-            {/* Messages area - now with fixed height and scrollable */}
-            <div className="flex-grow flex justify-center px-3 sm:px-6 py-4 overflow-hidden">
-              <div 
-                className="w-full max-w-6xl h-[calc(100vh-180px)] overflow-y-auto px-1 py-2 rounded-lg bg-white"
-                style={{ scrollbarWidth: 'thin' }}
-              >
-                <div className="flex flex-col gap-6 w-full mx-auto">
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${
-                        msg.sender === "user" ? "justify-end" : "justify-start"
-                      } w-full`}
-                    >
+            {/* Simplified chat container with proper constraints */}
+            <div className="flex-grow relative overflow-hidden flex flex-col">
+              {/* Messages area with proper scrolling */}
+              <div className="absolute inset-0 overflow-y-auto pb-24">
+                {/* Message container with proper width */}
+                <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+                  {/* Simple top fade effect */}
+                  <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
+                  
+                  {/* Messages */}
+                  <div className="flex flex-col gap-6">
+                    {messages.map((msg) => (
                       <div
-                        className={`${
-                          msg.sender === "user"
-                            ? "px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%]"
-                            : "px-3 py-2 text-gray-900 rounded-lg max-w-[85%]"
-                        } break-words`}
+                        key={msg.id}
+                        className={`flex ${
+                          msg.sender === "user" ? "justify-end" : "justify-start"
+                        } w-full`}
                       >
-                        {msg.text}
-                      </div>
-                    </div>
-                  ))}
-                  {isTyping && (
-                    <div className="flex justify-start w-full">
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                        <div className="flex space-x-1">
-                          <div
-                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                            style={{ animationDelay: "0ms" }}
-                          ></div>
-                          <div
-                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                            style={{ animationDelay: "150ms" }}
-                          ></div>
-                          <div
-                            className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
-                            style={{ animationDelay: "300ms" }}
-                          ></div>
+                        <div
+                          className={`${
+                            msg.sender === "user"
+                              ? "px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%]"
+                              : "px-3 py-2 text-gray-900 rounded-lg max-w-[85%]"
+                          } break-words`}
+                        >
+                          {msg.text}
                         </div>
                       </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
+                    ))}
+                    {isTyping && (
+                      <div className="flex justify-start w-full">
+                        <div className="px-3 py-2 bg-gray-50 rounded-lg">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={messagesEndRef} className="h-4" />
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            {/* Fixed input at bottom - remained unchanged */}
-            <div className="w-full px-6 sm:px-10 py-4 bg-white">
-              <div className="relative w-full max-w-6xl mx-auto">
-                <textarea
-                  ref={textareaRef}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Type something great here..."
-                  className={`w-full p-4 border border-gray-300 focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-all duration-200 resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
-                    isMultiline ? "rounded-2xl" : "rounded-full"
-                  }`}
-                  rows={1}
-                  style={{
-                    paddingRight: "3rem",
-                    lineHeight: "1.5",
-                  }}
-                />
-                <button
-                  className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
-                    isMultiline
-                      ? "top-4"
-                      : "top-1/2 transform -translate-y-1/2"
-                  }`}
-                  onClick={() => {
-                    if (inputValue.trim()) {
-                      sendMessage(inputValue);
-                    }
-                  }}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="lucide lucide-send"
-                  >
-                    <path d="m22 2-7 20-4-9-9-4Z" />
-                    <path d="M22 2 11 13" />
-                  </svg>
-                </button>
+
+              {/* Fixed input box at bottom */}
+              <div className="absolute bottom-0 left-0 right-0 z-20">
+                {/* Bottom fade effect */}
+                <div className="h-20 bg-gradient-to-t from-white to-transparent"></div>
+                
+                {/* Input container */}
+                <div className="bg-white px-4 sm:px-6 pb-4 pt-2">
+                  <div className="w-full max-w-6xl mx-auto">
+                    <div className="relative">
+                      <textarea
+                        ref={textareaRef}
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Type something great here..."
+                        className={`w-full p-4 border border-gray-300 focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-all duration-200 resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
+                          isMultiline ? "rounded-2xl" : "rounded-full"
+                        }`}
+                        rows={1}
+                        style={{
+                          paddingRight: "3rem",
+                          lineHeight: "1.5",
+                        }}
+                      />
+                      <button
+                        className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
+                          isMultiline
+                            ? "top-4"
+                            : "top-1/2 transform -translate-y-1/2"
+                        }`}
+                        onClick={() => {
+                          if (inputValue.trim()) {
+                            sendMessage(inputValue);
+                          }
+                        }}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="lucide lucide-send"
+                        >
+                          <path d="m22 2-7 20-4-9-9-4Z" />
+                          <path d="M22 2 11 13" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
