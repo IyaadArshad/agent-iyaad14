@@ -14,10 +14,11 @@ export default function Home() {
   const [isMultiline, setIsMultiline] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [messages, setMessages] = useState<
-    { id: string; text: string; sender: "user" | "ai" }[]
+    { id: string; text: string; sender: "user" | "agent" }[]
   >([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isTyping, setIsTyping] = useState(false);
 
   // Improved height adjustment function
   const adjustTextareaHeight = () => {
@@ -56,14 +57,43 @@ export default function Home() {
     }
   }, [messages]);
 
+  // Sample agent responses
+  const agentResponses = [
+    "I'm analyzing your request for a BRS document. Could you provide more details about the project scope?",
+    "Based on your input, I'll start drafting a Business Requirements Specification. Would you like me to include specific sections like scope, assumptions, and constraints?",
+    "I've noted your requirements. A well-structured BRS should include functional requirements, system interfaces, and user characteristics. Would you like me to start with these sections?",
+    "To create a comprehensive BRS, I'll need information about project timelines, stakeholders, and success criteria. Can you share these details?",
+    "I can help formulate your business requirements. Let me know if you need specific industry compliance considerations included in the document."
+  ];
+
   const sendMessage = (msg: string) => {
     if (!msg.trim()) return;
+
+    // Add user message
     setMessages((prev) => [
       ...prev,
       { id: Date.now().toString(), text: msg, sender: "user" },
     ]);
+
     setShowChat(true);
     setInputValue("");
+
+    // Simulate agent typing
+    setIsTyping(true);
+
+    // Add agent response after a delay
+    setTimeout(() => {
+      const randomIndex = Math.floor(Math.random() * agentResponses.length);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          text: agentResponses[randomIndex],
+          sender: "agent",
+        },
+      ]);
+      setIsTyping(false);
+    }, 1500);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -173,10 +203,10 @@ export default function Home() {
           <div className="flex-1 flex flex-col h-full">
             {/* Messages area */}
             <div
-              className="flex-1 overflow-y-auto px-6 sm:px-10 py-4"
+              className="flex-1 overflow-y-auto px-3 sm:px-6 py-6"
               style={{ minHeight: 0 }}
             >
-              <div className="flex flex-col gap-4 w-full max-w-6xl mx-auto">
+              <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto">
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
@@ -185,39 +215,63 @@ export default function Home() {
                     } w-full`}
                   >
                     <div
-                      className={`px-4 py-3 rounded-2xl shadow-sm max-w-[75%] break-words ${
+                      className={`px-4 py-3 rounded-2xl shadow-sm max-w-[80%] break-words ${
                         msg.sender === "user"
-                          ? "bg-[#EBF2FF] text-[#1A479D] rounded-br-md mr-2"
-                          : "bg-gray-100 text-gray-900 rounded-bl-md ml-2"
+                          ? "bg-[#EBF2FF] text-[#1A479D] rounded-br-md mr-1"
+                          : "bg-gray-100 text-gray-900 rounded-bl-md ml-1"
                       }`}
                     >
                       {msg.text}
                     </div>
                   </div>
                 ))}
+                {isTyping && (
+                  <div className="flex justify-start w-full">
+                    <div className="px-4 py-3 rounded-2xl shadow-sm bg-gray-100 ml-1">
+                      <div className="flex space-x-1">
+                        <div
+                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                          style={{ animationDelay: "0ms" }}
+                        ></div>
+                        <div
+                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                          style={{ animationDelay: "150ms" }}
+                        ></div>
+                        <div
+                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                          style={{ animationDelay: "300ms" }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             </div>
             {/* Fixed input at bottom */}
             <div className="w-full px-6 sm:px-10 py-4 bg-white border-t border-gray-100">
-              <div className="relative max-w-6xl mx-auto w-full hover:w-[102%] focus-within:w-[102%] transition-all duration-350">
+              <div className="relative w-full max-w-6xl mx-auto">
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type something great here..."
-                  className={`w-full p-4 border border-gray-300 focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-all duration-200 resize-none overflow-hidden min-h-[65px] max-h-[200px] shadow-none ${
+                  className={`w-full p-4 border border-gray-300 focus:outline-none hover:ring-0 focus:ring-[#1A479D] focus:border-[#1A479D] hover:border-[#1A479D] transition-all duration-200 resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
                     isMultiline ? "rounded-2xl" : "rounded-full"
                   }`}
                   rows={1}
                   style={{
-                    paddingRight: "3.5rem",
+                    paddingRight: "3rem",
                     lineHeight: "1.5",
                   }}
                 />
                 <button
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#1A479D] transition-all duration-200"
+                  className={`absolute right-3 text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
+                    isMultiline
+                      ? "top-4"
+                      : "top-1/2 transform -translate-y-1/2"
+                  }`}
                   onClick={() => {
                     if (inputValue.trim()) {
                       sendMessage(inputValue);
