@@ -19,45 +19,34 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [welcomeOpacity, setWelcomeOpacity] = useState(1);
+  const [chatOpacity, setChatOpacity] = useState(0);
 
-  // Improved height adjustment function
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
-      // Reset the height first
       textarea.style.height = "auto";
-
-      // Get the new scroll height and set it
       const scrollHeight = textarea.scrollHeight;
       textarea.style.height = scrollHeight + "px";
-
-      // Count actual newlines in the content
       const newlineCount = (inputValue.match(/\n/g) || []).length;
-
-      // Update multiline state based on actual content or scrollHeight
       setIsMultiline(newlineCount > 0 || scrollHeight > 65);
-
-      // Handle the empty case explicitly
       if (inputValue === "") {
-        textarea.style.height = "56px"; // Reset to minimum height
+        textarea.style.height = "56px";
         setIsMultiline(false);
       }
     }
   };
 
-  // Update height whenever input value changes
   useEffect(() => {
     adjustTextareaHeight();
   }, [inputValue]);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  // Sample agent responses
   const agentResponses = [
     "I'm analyzing your request for a BRS document. Could you provide more details about the project scope?",
     "Based on your input, I'll start drafting a Business Requirements Specification. Would you like me to include specific sections like scope, assumptions, and constraints?",
@@ -69,19 +58,22 @@ export default function Home() {
   const sendMessage = (msg: string) => {
     if (!msg.trim()) return;
 
-    // Add user message
     setMessages((prev) => [
       ...prev,
       { id: Date.now().toString(), text: msg, sender: "user" },
     ]);
 
-    setShowChat(true);
+    setWelcomeOpacity(0);
+
+    setTimeout(() => {
+      setShowChat(true);
+      setChatOpacity(1);
+    }, 250);
+
     setInputValue("");
 
-    // Simulate agent typing
     setIsTyping(true);
 
-    // Add agent response after a delay
     setTimeout(() => {
       const randomIndex = Math.floor(Math.random() * agentResponses.length);
       setMessages((prev) => [
@@ -106,7 +98,6 @@ export default function Home() {
         sendMessage(inputValue);
       }
     } else if (e.key === "Backspace" && inputValue.endsWith("\n")) {
-      // Handle backspace at end of line properly
       setInputValue((prev) => prev.slice(0, -1));
       e.preventDefault();
     }
@@ -114,7 +105,6 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-white">
-      {/* Sidebar */}
       <Sidebar
         isCollapsed={false}
         toggleSidebar={() => {}}
@@ -122,13 +112,16 @@ export default function Home() {
         onNewChat={() => {}}
         onSelectConversation={(id) => console.log("Selected:", id)}
       />
-      {/* Main content */}
       <div className="flex-1 flex flex-col relative">
-        {/* Main content */}
         {!showChat ? (
-          <main className="flex-1 flex flex-col items-center justify-center">
+          <main
+            className="flex-1 flex flex-col items-center justify-center"
+            style={{
+              opacity: welcomeOpacity,
+              transition: "opacity 0.3s ease-out",
+            }}
+          >
             <div className="w-full max-w-2xl flex flex-col items-center px-4">
-              {/* Logo */}
               <div className="mb-3 w-32 h-32 relative">
                 <Image
                   src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/finac-logo-removebg-aLpR2MPh5KBTtDt9S0tD9MKhOeyle0.png"
@@ -138,18 +131,13 @@ export default function Home() {
                   priority
                 />
               </div>
-
-              {/* Welcome text */}
               <h1 className="text-4xl font-semibold mb-1 text-center">
                 <span className="text-[#1A479D] font-bold">FiNAC BRS AI</span>{" "}
                 Welcomes You
               </h1>
-
               <p className="text-gray-500 mb-6 text-md text-center">
                 Type a message to start your BRS generation process
               </p>
-
-              {/* Expandable input box */}
               <div className="w-5/5  hover:w-5/4 focus-within:w-5/4 transition-all duration-200 mb-8">
                 <div className="relative">
                   <textarea
@@ -200,17 +188,17 @@ export default function Home() {
             </div>
           </main>
         ) : (
-          <div className="flex-1 flex flex-col h-full">
-            {/* Simplified chat container with proper constraints */}
+          <div
+            className="flex-1 flex flex-col h-full"
+            style={{
+              opacity: chatOpacity,
+              transition: "opacity 0.3s ease-in",
+            }}
+          >
             <div className="flex-grow relative overflow-hidden flex flex-col">
-              {/* Messages area with proper scrolling */}
               <div className="absolute inset-0 overflow-y-auto pb-24">
-                {/* Message container with proper width */}
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
-                  {/* Simple top fade effect */}
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
-
-                  {/* Messages */}
                   <div className="flex flex-col gap-6">
                     {messages.map((msg, index) => (
                       <div
@@ -256,15 +244,10 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-
-              {/* Fixed input box at bottom */}
               <div className="absolute bottom-0 left-0 right-0 z-20">
-                {/* Bottom fade effect */}
                 <div className="h-20 bg-gradient-to-t from-white to-transparent">
                   <div className="absolute inset-x-0 bottom-0 h-10 bg-white"></div>
                 </div>
-
-                {/* Input container */}
                 <div className="bg-white px-4 sm:px-6 mb-8 pt-1">
                   <div className="w-full max-w-6xl mx-auto">
                     <div className="relative">
@@ -318,10 +301,14 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        {/* Footer - only show in welcome screen */}
         {!showChat && (
-          <footer className="p-4 text-center text-gray-500 text-sm">
+          <footer
+            className="p-4 text-center text-gray-500 text-sm"
+            style={{
+              opacity: welcomeOpacity,
+              transition: "opacity 0.3s ease-out",
+            }}
+          >
             <p className="text-sm text-gray-400 mt-2 text-center">
               Powered by FiNAC AI. <br />
               Icons by{" "}
