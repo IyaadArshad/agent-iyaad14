@@ -63,7 +63,7 @@ export default function Home() {
     "Based on your input, I'll start drafting a Business Requirements Specification. Would you like me to include specific sections like scope, assumptions, and constraints?",
     "I've noted your requirements. A well-structured BRS should include functional requirements, system interfaces, and user characteristics. Would you like me to start with these sections?",
     "To create a comprehensive BRS, I'll need information about project timelines, stakeholders, and success criteria. Can you share these details?",
-    "I can help formulate your business requirements. Let me know if you need specific industry compliance considerations included in the document."
+    "I can help formulate your business requirements. Let me know if you need specific industry compliance considerations included in the document.",
   ];
 
   const sendMessage = (msg: string) => {
@@ -209,14 +209,16 @@ export default function Home() {
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   {/* Simple top fade effect */}
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
-                  
+
                   {/* Messages */}
                   <div className="flex flex-col gap-6">
                     {messages.map((msg, index) => (
                       <div
                         key={msg.id}
                         className={`flex ${
-                          msg.sender === "user" ? "justify-end" : "justify-start"
+                          msg.sender === "user"
+                            ? "justify-end"
+                            : "justify-start"
                         } w-full ${index === 0 ? "-mt-4" : ""}`}
                       >
                         <div
@@ -234,9 +236,18 @@ export default function Home() {
                       <div className="flex justify-start w-full">
                         <div className="px-3 py-2 bg-gray-50 rounded-lg">
                           <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                            <div
+                              className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                              style={{ animationDelay: "0ms" }}
+                            ></div>
+                            <div
+                              className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                              style={{ animationDelay: "150ms" }}
+                            ></div>
+                            <div
+                              className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                              style={{ animationDelay: "300ms" }}
+                            ></div>
                           </div>
                         </div>
                       </div>
@@ -252,7 +263,7 @@ export default function Home() {
                 <div className="h-20 bg-gradient-to-t from-white to-transparent">
                   <div className="absolute inset-x-0 bottom-0 h-10 bg-white"></div>
                 </div>
-                
+
                 {/* Input container */}
                 <div className="bg-white px-4 sm:px-6 mb-8 pt-1">
                   <div className="w-full max-w-6xl mx-auto">
