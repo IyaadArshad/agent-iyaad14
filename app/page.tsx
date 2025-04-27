@@ -206,18 +206,18 @@ export default function Home() {
               {/* Messages area with proper scrolling */}
               <div className="absolute inset-0 overflow-y-auto pb-24">
                 {/* Message container with proper width */}
-                <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+                <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   {/* Simple top fade effect */}
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   
                   {/* Messages */}
                   <div className="flex flex-col gap-6">
-                    {messages.map((msg) => (
+                    {messages.map((msg, index) => (
                       <div
                         key={msg.id}
                         className={`flex ${
                           msg.sender === "user" ? "justify-end" : "justify-start"
-                        } w-full`}
+                        } w-full ${index === 0 ? "-mt-4" : ""}`}
                       >
                         <div
                           className={`${
@@ -249,10 +249,12 @@ export default function Home() {
               {/* Fixed input box at bottom */}
               <div className="absolute bottom-0 left-0 right-0 z-20">
                 {/* Bottom fade effect */}
-                <div className="h-20 bg-gradient-to-t from-white to-transparent"></div>
+                <div className="h-20 bg-gradient-to-t from-white to-transparent">
+                  <div className="absolute inset-x-0 bottom-0 h-10 bg-white"></div>
+                </div>
                 
                 {/* Input container */}
-                <div className="bg-white px-4 sm:px-6 pb-4 pt-2">
+                <div className="bg-white px-4 sm:px-6 mb-8 pt-1">
                   <div className="w-full max-w-6xl mx-auto">
                     <div className="relative">
                       <textarea
