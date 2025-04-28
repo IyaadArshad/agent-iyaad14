@@ -39,6 +39,9 @@ export function InputBox({
   const [isMultiline, setIsMultiline] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [iconState, setIconState] = useState<
+    "idle" | "loading" | "success" | "error" | "fadeLoading"
+  >("idle");
 
   const isAnyModeActive = () => {
     return modes.search || modes.reason || modes.jdi;
@@ -159,22 +162,142 @@ export function InputBox({
             <div className="h-px bg-gray-200 w-full"></div>
 
             <div className="flex items-center px-4 py-2 bg-gray-50 rounded-b-2xl justify-between">
-              <button className="flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="lucide lucide-paperclip"
+              <button
+                type="button"
+                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative`}
+                onClick={async () => {
+                  await new Promise((res) => setTimeout(res, 50));
+                  setIconState("loading");
+                  await new Promise((res) => setTimeout(res, 450));
+                  const fileInput = document.getElementById(
+                    "chat-file-input"
+                  ) as HTMLInputElement | null;
+                  if (fileInput) fileInput.click();
+                }}
+                disabled={iconState !== "idle"}
+              >
+                <span
+                  className={`transition-opacity duration-200 absolute left-2 ${
+                    iconState === "idle"
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  }`}
                 >
-                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-                Attach files
+                  {/* Paperclip icon */}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="lucide lucide-paperclip"
+                  >
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </span>
+                <span
+                  className={`transition-opacity duration-200 absolute left-2 ${
+                    iconState === "loading"
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  }`}
+                >
+                  {/* Loading spinner */}
+                  <svg
+                    className="animate-spin"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                    />
+                  </svg>
+                </span>
+                <span
+                  className={`transition-opacity duration-200 absolute left-2 ${
+                    iconState === "success"
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  }`}
+                >
+                  {/* Check icon */}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </span>
+                <span
+                  className={`transition-opacity duration-200 absolute left-2 ${
+                    iconState === "error"
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  }`}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </span>
+                <span className="pl-5">Attach files</span>
+                <input
+                  id="chat-file-input"
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    setIconState("fadeLoading");
+                    await new Promise((res) => setTimeout(res, 200));
+                    await new Promise((res) => setTimeout(res, 400));
+                    const files = e.target.files;
+                    if (files && files.length > 0) {
+                      setIconState("success");
+                      const fileNames = Array.from(files)
+                        .map((file) => file.name)
+                        .join(", ");
+                      setInputValue(
+                        (prev: string) =>
+                          prev + (prev ? " " : "") + `Uploaded: ${fileNames}`
+                      );
+                    } else {
+                      setIconState("error");
+                    }
+                    await new Promise((res) => setTimeout(res, 900));
+                    setIconState("idle");
+                  }}
+                />
               </button>
 
               <div className="flex gap-1">
