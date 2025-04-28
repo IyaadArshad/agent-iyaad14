@@ -90,17 +90,28 @@ export function InputBox({
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
+    // Add animation states similar to the file input handling
+    setIconState("fadeLoading");
+    await new Promise((res) => setTimeout(res, 200));
+    await new Promise((res) => setTimeout(res, 400));
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setIconState("success");
       const files = Array.from(e.dataTransfer.files);
       const fileNames = files.map((file) => file.name).join(", ");
       setInputValue(
         (prev: string) => prev + (prev ? " " : "") + `Uploaded: ${fileNames}`
       );
+    } else {
+      setIconState("error");
     }
+
+    await new Promise((res) => setTimeout(res, 900));
+    setIconState("idle");
   };
 
   return (
