@@ -43,10 +43,6 @@ export function InputBox({
     "idle" | "loading" | "success" | "error" | "fadeLoading"
   >("idle");
 
-  const isAnyModeActive = () => {
-    return modes.search || modes.reason || modes.jdi;
-  };
-
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -380,8 +376,8 @@ export function InputBox({
                       className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
                     >
                       <p>
-                        "Just Do It" - follows instructions without asking
-                        questions
+                        &quot;Just Do It&quot; - follows instructions without
+                        asking questions
                       </p>
                     </TooltipContent>
                   </Tooltip>
