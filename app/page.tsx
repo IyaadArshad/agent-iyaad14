@@ -26,7 +26,7 @@ interface InputBoxProps {
   className?: string;
 }
 
-export function InputBox({
+function InputBox({
   inputValue,
   setInputValue,
   onSendMessage,
