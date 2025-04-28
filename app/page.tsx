@@ -332,7 +332,7 @@ export default function Home() {
                           placeholder={
                             isDragging
                               ? "Drop files here..."
-                              : "Type something great here or drop files..."
+                              : "Type your next message here or drop files..."
                           }
                           className="w-full p-4 border-0 focus:outline-none resize-none overflow-hidden min-h-[56px] max-h-[200px] rounded-t-2xl"
                           rows={1}
