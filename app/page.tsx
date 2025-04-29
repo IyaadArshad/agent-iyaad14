@@ -471,16 +471,19 @@ export default function Home() {
     }, 250);
 
     // Prepare conversation history for the API call
-    const conversationMessages = messages.concat(userMessage).map((msg) => {
-      if (msg.sender === "user") {
-        return { role: "user", content: msg.text };
-      } else if (msg.sender === "agent") {
-        return { role: "assistant", content: msg.text };
-      } else {
-        // Skip function messages as they're handled differently
-        return null;
-      }
-    }).filter(Boolean); // Remove nulls
+    const conversationMessages = messages
+      .concat(userMessage)
+      .map((msg) => {
+        if (msg.sender === "user") {
+          return { role: "user", content: msg.text };
+        } else if (msg.sender === "agent") {
+          return { role: "assistant", content: msg.text };
+        } else {
+          // Skip function messages as they're handled differently
+          return null;
+        }
+      })
+      .filter(Boolean); // Remove nulls
 
     try {
       // Call the agent API with streaming response handling
@@ -532,17 +535,28 @@ export default function Home() {
               const data = JSON.parse(jsonStr);
 
               if (data.type === "message") {
-                // --- Frontend Safeguard --- 
+                // --- Frontend Safeguard ---
                 let messageText = "";
-                if (typeof data.content === 'string') {
+                if (typeof data.content === "string") {
                   messageText = data.content;
-                } else if (typeof data.content === 'object' && data.content !== null && 'value' in data.content && typeof data.content.value === 'string') {
+                } else if (
+                  typeof data.content === "object" &&
+                  data.content !== null &&
+                  "value" in data.content &&
+                  typeof data.content.value === "string"
+                ) {
                   // Handle the { format: '...', value: '...' } case specifically
-                  console.warn("Received message content as object, extracting value:", data.content);
+                  console.warn(
+                    "Received message content as object, extracting value:",
+                    data.content
+                  );
                   messageText = data.content.value;
                 } else {
                   // Fallback for other unexpected types (null, other objects, etc.)
-                  console.warn("Received unexpected message content type, attempting to stringify:", data.content);
+                  console.warn(
+                    "Received unexpected message content type, attempting to stringify:",
+                    data.content
+                  );
                   try {
                     messageText = String(data.content); // Use String() for broader conversion
                   } catch {
@@ -552,11 +566,18 @@ export default function Home() {
                 // --- End Frontend Safeguard ---
 
                 responseText = messageText; // Update responseText if needed
-                setMessages(prev => [
+                setMessages((prev) => [
                   // Remove previous typing indicator if present
-                  ...prev.filter(m => !(m.sender === 'agent' && m.id === 'typing-indicator')),
+                  ...prev.filter(
+                    (m) =>
+                      !(m.sender === "agent" && m.id === "typing-indicator")
+                  ),
                   // Add the new agent message with the processed string content
-                  { id: "agent-" + Date.now().toString(), text: messageText, sender: "agent" }
+                  {
+                    id: "agent-" + Date.now().toString(),
+                    text: messageText,
+                    sender: "agent",
+                  },
                 ]);
                 setIsTyping(false);
               } else if (data.type === "function") {
