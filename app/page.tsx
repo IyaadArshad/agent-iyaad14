@@ -3,6 +3,10 @@ import Image from "next/image";
 import { Sidebar } from "@/components/Sidebar";
 import { useState, useRef, useEffect } from "react";
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+// Add custom markdown styles
+import "./markdown-styles.css";
 import {
   Tooltip,
   TooltipContent,
@@ -748,8 +752,10 @@ export default function Home() {
                               index === 0 ? "-mt-4" : ""
                             }`}
                           >
-                            <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words">
-                              {msg.text}
+                            <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words prose prose-sm">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {msg.text}
+                              </ReactMarkdown>
                             </div>
                           </div>
                         );
