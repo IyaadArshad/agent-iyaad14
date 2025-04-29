@@ -304,77 +304,255 @@ export async function POST(request: NextRequest) {
           console.log("OpenAI Raw Response:", JSON.stringify(response, null, 2));
 
           let messageContentToSend: string | null = null;
+          let messageSent = false; // Flag to track if a message chunk was sent
+          let hasToolCalls = false; // Flag to track if tool calls were processed
 
-          // --- Refined response text handling (Priority: output_text, then text.value, then text string) ---
-
-          // 1. Check response.output_text first
+          // First, check for output_text at the root level (for backward compatibility)
           if (typeof response.output_text === 'string' && response.output_text.trim() !== '') {
-            console.log("Using response.output_text as message content.");
+            console.log("Using response.output_text at root level as message content");
             messageContentToSend = response.output_text;
-          } else {
-            // 2. Fallback to checking response.text
-            console.log("response.output_text not usable, checking response.text.");
-            if ('text' in response && response.text) {
-              const rawText = response.text;
-              console.log("Raw response.text:", JSON.stringify(rawText, null, 2));
-
-              if (typeof rawText === 'string') {
-                messageContentToSend = rawText;
-              } else if (typeof rawText === 'object' && rawText !== null) {
-                // Check specifically for a structure with a 'value' property
-                if ('value' in rawText && typeof (rawText as any).value === 'string') {
-                   messageContentToSend = (rawText as any).value;
-                   if (Object.keys(rawText).length > 1) {
-                      console.log("Extracted 'value' from text object:", rawText);
-                   }
-                // Handle object with 'format' but no 'value' -> treat as empty only if output_text wasn't found
-                } else if ('format' in rawText && !('value' in rawText)) {
-                  console.warn("Received response.text object with 'format' but no 'value', and no output_text. Treating as empty response.", rawText);
-                  messageContentToSend = ""; // Send empty string
-                } else {
-                   // If it's an object but not the expected structure, stringify it as a fallback
-                   console.warn("Unexpected object format for response.text, stringifying:", rawText);
-                   try {
-                     messageContentToSend = JSON.stringify(rawText);
-                   } catch {
-                     messageContentToSend = "[Unsupported response object]";
-                   }
-                }
-              } else {
-                // Handle other unexpected types for response.text
-                console.warn("Unexpected type for response.text:", typeof rawText);
-                messageContentToSend = String(rawText); // Force conversion to string
-              }
-            } else {
-               console.log("Neither response.output_text nor response.text found or usable in OpenAI response.");
-            }
-          }
-          // --- End of refined handling ---
-
-
-          if (messageContentToSend !== null && messageContentToSend.trim() !== '') { // Also check if it's not just whitespace
-            const finalContentString = String(messageContentToSend); // Ensure it's a string
             controller.enqueue(
               new TextEncoder().encode(
                 `data: ${JSON.stringify({
                   type: "message",
-                  content: finalContentString, // Send the guaranteed string
+                  content: messageContentToSend,
                 })}\n\n`
               )
             );
-          // Check if tool_calls exists before accessing it
-          } else if (!('tool_calls' in response) || !Array.isArray(response.tool_calls) || response.tool_calls.length === 0) {
-             // Log if no text AND no tool calls were sent
-             if (messageContentToSend === null || messageContentToSend.trim() === '') {
-                console.log("OpenAI response had no usable text content (output_text or text) and no tool calls.");
-             }
+            messageSent = true;
           }
+          // Then process the output array (which is the newer format)
+          else if (response.output && Array.isArray(response.output)) {
+            console.log("Processing response.output array with", response.output.length, "items");
+            
+            for (const outputItem of response.output) {
+              // Use type assertion to handle potential type mismatches
+              const item = outputItem as any;
+              console.log("Processing output item of type:", item.type);
 
+              if (item.type === 'message') {
+                // --- Handle message type in output array ---
+                console.log("Found message item in output array");
+                
+                // Check if content exists and is an array
+                if (item.content && Array.isArray(item.content)) {
+                  for (const contentItem of item.content) {
+                    const contentItemAny = contentItem as any;
+                    
+                    // Process output_text from content item
+                    if (contentItemAny.type === 'output_text' && contentItemAny.text) {
+                      messageContentToSend = contentItemAny.text;
+                      console.log("Extracted text from message.content[].output_text:", messageContentToSend);
+                      
+                      if (messageContentToSend && messageContentToSend.trim() !== '') {
+                        controller.enqueue(
+                          new TextEncoder().encode(
+                            `data: ${JSON.stringify({
+                              type: "message",
+                              content: messageContentToSend,
+                            })}\n\n`
+                          )
+                        );
+                        messageSent = true;
+                      }
+                    }
+                  }
+                } else if (typeof item.content === 'string') {
+                  // Direct string content
+                  messageContentToSend = item.content;
+                  console.log("Extracted direct string content from message:", messageContentToSend);
+                  
+                  if (messageContentToSend && messageContentToSend.trim() !== '') {
+                    controller.enqueue(
+                      new TextEncoder().encode(
+                        `data: ${JSON.stringify({
+                          type: "message",
+                          content: messageContentToSend,
+                        })}\n\n`
+                      )
+                    );
+                    messageSent = true;
+                  }
+                }
+              } else if (item.type === 'tool_calls' || item.type === 'function_call') {
+                // --- Handle tool calls within the output array ---
+                
+                if (item.type === 'function_call') {
+                  // Direct function call format
+                  hasToolCalls = true;
+                  console.log("Found direct function_call in output array");
+                  
+                  const name = item.name;
+                  let functionArgs: any;
 
-          // Handle tool calls (function calls)
-          if ('tool_calls' in response && Array.isArray(response.tool_calls) && response.tool_calls.length > 0) {
+                  if (typeof item.arguments === 'string') {
+                    try {
+                      functionArgs = JSON.parse(item.arguments);
+                    } catch (error) {
+                      console.error("Error parsing function arguments:", error);
+                      functionArgs = {};
+                    }
+                  } else {
+                    functionArgs = item.arguments || {};
+                  }
+
+                  functionCallLogs.push({ name, arguments: functionArgs });
+
+                  console.log("Function Called:", name);
+                  console.log("Parameters:", functionArgs);
+
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({
+                        type: "function",
+                        data: name,
+                        parameters: functionArgs,
+                      })}\n\n`
+                    )
+                  );
+
+                  let functionResult;
+                  if (name === "create_file") {
+                    functionResult = await create_file(functionArgs.filename);
+                  } else if (name === "write_initial_data") {
+                    functionResult = await write_initial_data(
+                      functionArgs.user_inputs,
+                      functionArgs.brs_file_name
+                    );
+                  } else if (name === "implement_edits") {
+                    functionResult = await implement_edits(
+                      functionArgs.user_inputs,
+                      functionArgs.file_name
+                    );
+                  } else if (name === "read_file") {
+                    functionResult = await read_file(functionArgs.file_name);
+                  } else {
+                    functionResult = {
+                      success: false,
+                      error: `Unknown function: ${name}`
+                    };
+                  }
+
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({
+                        type: "functionResult",
+                        data: functionResult,
+                      })}\n\n`
+                    )
+                  );
+                } else {
+                  // Tool calls array format
+                  // Extract tool_calls based on the format (directly or in a property)
+                  const toolCalls = item.tool_calls || [];
+                  
+                  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                    hasToolCalls = true; // Mark that tool calls are present
+                    console.log("Found tool_calls in output array:", toolCalls.length);
+
+                    for (const toolCall of toolCalls) {
+                      if (toolCall && toolCall.type === 'function' && toolCall.function) {
+                        const { name } = toolCall.function;
+                        let functionArgs: any;
+
+                        if (typeof toolCall.function.arguments === 'string') {
+                          try {
+                            functionArgs = JSON.parse(toolCall.function.arguments);
+                          } catch (error) {
+                            console.error("Error parsing function arguments:", error);
+                            functionArgs = {};
+                          }
+                        } else {
+                          functionArgs = toolCall.function.arguments || {};
+                        }
+
+                        functionCallLogs.push({ name, arguments: functionArgs });
+
+                        console.log("Function Called:", name);
+                        console.log("Parameters:", functionArgs);
+
+                        controller.enqueue(
+                          new TextEncoder().encode(
+                            `data: ${JSON.stringify({
+                              type: "function",
+                              data: name,
+                              parameters: functionArgs,
+                            })}\n\n`
+                          )
+                        );
+
+                        let functionResult;
+                        if (name === "create_file") {
+                          functionResult = await create_file(functionArgs.filename);
+                        } else if (name === "write_initial_data") {
+                          functionResult = await write_initial_data(
+                            functionArgs.user_inputs,
+                            functionArgs.brs_file_name
+                          );
+                        } else if (name === "implement_edits") {
+                          functionResult = await implement_edits(
+                            functionArgs.user_inputs,
+                            functionArgs.file_name
+                          );
+                        } else if (name === "read_file") {
+                          functionResult = await read_file(functionArgs.file_name);
+                        } else {
+                          functionResult = {
+                            success: false,
+                            error: `Unknown function: ${name}`
+                          };
+                        }
+
+                        controller.enqueue(
+                          new TextEncoder().encode(
+                            `data: ${JSON.stringify({
+                              type: "functionResult",
+                              data: functionResult,
+                            })}\n\n`
+                          )
+                        );
+                      }
+                    }
+                  }
+                }
+              } else if (item.type === 'text') {
+                // Handle legacy text object format for compatibility
+                const rawText = item.text;
+                if (rawText && typeof rawText === 'string') {
+                  messageContentToSend = rawText;
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({
+                        type: "message",
+                        content: messageContentToSend,
+                      })}\n\n`
+                    )
+                  );
+                  messageSent = true;
+                } else if (rawText && typeof rawText === 'object' && rawText.value) {
+                  messageContentToSend = rawText.value;
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({
+                        type: "message",
+                        content: messageContentToSend,
+                      })}\n\n`
+                    )
+                  );
+                  messageSent = true;
+                }
+              } else {
+                console.log(`Skipping unknown output item type: ${item.type}`);
+              }
+            }
+          } 
+          // Finally check for tool_calls at the root level (for backward compatibility)
+          else if ('tool_calls' in response && Array.isArray(response.tool_calls) && response.tool_calls.length > 0) {
+            console.log("Using tool_calls at root level");
+            hasToolCalls = true;
             const toolCalls = response.tool_calls;
-
+            
+            // Process the tool calls (reusing the existing code)
             for (const toolCall of toolCalls) {
               if (toolCall && toolCall.type === 'function' && toolCall.function) {
                 const { name } = toolCall.function;
@@ -393,8 +571,7 @@ export async function POST(request: NextRequest) {
 
                 functionCallLogs.push({ name, arguments: functionArgs });
 
-                console.log("Function Called:");
-                console.log("Name:", name);
+                console.log("Function Called (root level):", name);
                 console.log("Parameters:", functionArgs);
 
                 controller.enqueue(
@@ -439,6 +616,40 @@ export async function POST(request: NextRequest) {
                 );
               }
             }
+          }
+
+          // Last resort: check for text at the root level if we haven't sent anything yet
+          if (!messageSent && !hasToolCalls && 'text' in response) {
+            console.log("No content found in output array, checking root level text property");
+            const rawText = response.text as unknown as any;
+            if (typeof rawText === 'string' && rawText.trim() !== '') {
+              messageContentToSend = rawText;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({
+                    type: "message",
+                    content: messageContentToSend,
+                  })}\n\n`
+                )
+              );
+              messageSent = true;
+            } else if (typeof rawText === 'object' && rawText !== null && 'value' in rawText) {
+              messageContentToSend = (rawText as any).value;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({
+                    type: "message",
+                    content: messageContentToSend,
+                  })}\n\n`
+                )
+              );
+              messageSent = true;
+            }
+          }
+
+          // Log only if NEITHER text NOR tool calls were found/processed
+          if (!messageSent && !hasToolCalls) {
+             console.log("OpenAI response processing complete, but NO usable text content OR tool calls were found.");
           }
 
           controller.enqueue(
