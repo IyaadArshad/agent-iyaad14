@@ -24,6 +24,7 @@ interface InputBoxProps {
   };
   toggleMode?: (mode: "search" | "reason" | "jdi") => void;
   className?: string;
+  isDisabled?: boolean;
 }
 
 function InputBox({
@@ -35,6 +36,7 @@ function InputBox({
   modes = { search: false, reason: false, jdi: false },
   toggleMode = () => {},
   className = "",
+  isDisabled = false,
 }: InputBoxProps) {
   const [isMultiline, setIsMultiline] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -68,7 +70,7 @@ function InputBox({
       setInputValue((prev: string) => prev + "\n");
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputValue.trim()) {
+      if (inputValue.trim() && !isDisabled) {
         onSendMessage(inputValue);
       }
     } else if (e.key === "Backspace" && inputValue.endsWith("\n")) {
@@ -78,6 +80,7 @@ function InputBox({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (isDisabled) return;
     e.preventDefault();
     setIsDragging(true);
   };
@@ -87,6 +90,7 @@ function InputBox({
   };
 
   const handleDrop = async (e: React.DragEvent) => {
+    if (isDisabled) return;
     e.preventDefault();
     setIsDragging(false);
 
@@ -117,7 +121,9 @@ function InputBox({
           isDragging ? "bg-blue-50 border-dashed" : ""
         } border border-gray-300 ${
           showBottomSection ? "rounded-2xl" : "rounded-full"
-        } hover:border-[#1A479D] focus-within:border-[#1A479D] focus-within:ring-[#1A479D] transition-all duration-200`}
+        } hover:border-[#1A479D] focus-within:border-[#1A479D] focus-within:ring-[#1A479D] transition-all duration-200 ${
+          isDisabled ? "opacity-70 cursor-not-allowed" : ""
+        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -130,22 +136,24 @@ function InputBox({
           placeholder={isDragging ? "Drop files here..." : placeholder}
           className={`w-full p-4 border-0 focus:outline-none resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
             showBottomSection ? "rounded-t-2xl" : "rounded-full"
-          }`}
+          } ${isDisabled ? "bg-gray-100 cursor-not-allowed" : ""}`}
           rows={1}
           style={{
             paddingRight: "3rem",
             lineHeight: "1.5",
           }}
+          disabled={isDisabled}
         />
         <button
           className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
             isMultiline ? "top-4" : "top-[28px] transform -translate-y-1/2"
-          }`}
+          } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
-            if (inputValue.trim()) {
+            if (inputValue.trim() && !isDisabled) {
               onSendMessage(inputValue);
             }
           }}
+          disabled={isDisabled}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -171,8 +179,12 @@ function InputBox({
             <div className="flex items-center px-4 py-2 bg-gray-50 rounded-b-2xl justify-between">
               <button
                 type="button"
-                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative`}
+                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative ${
+                  isDisabled ? "opacity-50 cursor-not-allowed" : ""
+                }`}
                 onClick={async () => {
+                  if (isDisabled) return;
+
                   await new Promise((res) => setTimeout(res, 50));
                   setIconState("loading");
                   await new Promise((res) => setTimeout(res, 450));
@@ -181,7 +193,7 @@ function InputBox({
                   ) as HTMLInputElement | null;
                   if (fileInput) fileInput.click();
                 }}
-                disabled={iconState !== "idle"}
+                disabled={iconState !== "idle" || isDisabled}
               >
                 <span
                   className={`transition-opacity duration-200 absolute left-2 ${
@@ -316,8 +328,9 @@ function InputBox({
                           modes.search
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        }`}
-                        onClick={() => toggleMode("search")}
+                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                        onClick={() => !isDisabled && toggleMode("search")}
+                        disabled={isDisabled}
                       >
                         <SearchIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Search</span>
@@ -340,8 +353,9 @@ function InputBox({
                           modes.reason
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        }`}
-                        onClick={() => toggleMode("reason")}
+                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                        onClick={() => !isDisabled && toggleMode("reason")}
+                        disabled={isDisabled}
                       >
                         <BrainCircuitIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Reason</span>
@@ -364,8 +378,9 @@ function InputBox({
                           modes.jdi
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        }`}
-                        onClick={() => toggleMode("jdi")}
+                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                        onClick={() => !isDisabled && toggleMode("jdi")}
+                        disabled={isDisabled}
                       >
                         <ZapIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">JDI Mode</span>
@@ -397,6 +412,16 @@ function InputBox({
   );
 }
 
+// Define message type including function calls and results
+type MessageType = {
+  id: string;
+  text: string;
+  sender: "user" | "agent" | "function";
+  functionName?: string;
+  functionParams?: any;
+  functionResult?: any;
+};
+
 export default function Home() {
   const conversationHistory = [
     { id: "1", title: "Conversation 1", date: new Date() },
@@ -404,9 +429,7 @@ export default function Home() {
   ];
 
   const [inputValue, setInputValue] = useState("");
-  const [messages, setMessages] = useState<
-    { id: string; text: string; sender: "user" | "agent" }[]
-  >([]);
+  const [messages, setMessages] = useState<MessageType[]>([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -417,6 +440,7 @@ export default function Home() {
     reason: false,
     jdi: false,
   });
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -424,45 +448,194 @@ export default function Home() {
     }
   }, [messages]);
 
-  const agentResponses = [
-    "I'm analyzing your request for a BRS document. Could you provide more details about the project scope?",
-    "Based on your input, I'll start drafting a Business Requirements Specification. Would you like me to include specific sections like scope, assumptions, and constraints?",
-    "I've noted your requirements. A well-structured BRS should include functional requirements, system interfaces, and user characteristics. Would you like me to start with these sections?",
-    "To create a comprehensive BRS, I'll need information about project timelines, stakeholders, and success criteria. Can you share these details?",
-    "I can help formulate your business requirements. Let me know if you need specific industry compliance considerations included in the document.",
-  ];
+  const sendMessage = async (msg: string) => {
+    if (!msg.trim() || isWaitingForResponse) return;
 
-  const sendMessage = (msg: string) => {
-    if (!msg.trim()) return;
+    // Add user message to the conversation
+    const userMessageId = Date.now().toString();
+    const userMessage: MessageType = {
+      id: userMessageId,
+      text: msg,
+      sender: "user",
+    };
 
-    setMessages((prev) => [
-      ...prev,
-      { id: Date.now().toString(), text: msg, sender: "user" },
-    ]);
-
+    setMessages((prev) => [...prev, userMessage]);
     setWelcomeOpacity(0);
+    setInputValue("");
+    setIsWaitingForResponse(true);
+    setIsTyping(true);
 
     setTimeout(() => {
       setShowChat(true);
       setChatOpacity(1);
     }, 250);
 
-    setInputValue("");
+    // Prepare conversation history for the API call
+    const conversationMessages = messages.concat(userMessage).map((msg) => {
+      if (msg.sender === "user") {
+        return { role: "user", content: msg.text };
+      } else if (msg.sender === "agent") {
+        return { role: "assistant", content: msg.text };
+      } else {
+        // Skip function messages as they're handled differently
+        return null;
+      }
+    }).filter(Boolean); // Remove nulls
 
-    setIsTyping(true);
+    try {
+      // Call the agent API with streaming response handling
+      const response = await fetch("/api/agent/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: conversationMessages,
+          jdiMode: modes.jdi,
+        }),
+      });
 
-    setTimeout(() => {
-      const randomIndex = Math.floor(Math.random() * agentResponses.length);
+      if (!response.ok) {
+        throw new Error(`API call failed with status: ${response.status}`);
+      }
+
+      // Process the streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body is null");
+      }
+
+      let responseText = "";
+      let functionCalls: MessageType[] = [];
+
+      const processEvents = async () => {
+        let done = false;
+        let buffer = "";
+
+        while (!done) {
+          const { value, done: isDone } = await reader.read();
+          done = isDone;
+
+          if (done) break;
+
+          // Decode and add to the buffer
+          const text = new TextDecoder().decode(value);
+          buffer += text;
+
+          // Process complete events in the buffer
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || ""; // Keep the last incomplete event in the buffer
+
+          for (const event of events) {
+            if (!event.trim() || !event.startsWith("data: ")) continue;
+
+            try {
+              const jsonStr = event.replace(/^data: /, "");
+              const data = JSON.parse(jsonStr);
+
+              if (data.type === "message") {
+                // --- Frontend Safeguard --- 
+                let messageText = "";
+                if (typeof data.content === 'string') {
+                  messageText = data.content;
+                } else if (typeof data.content === 'object' && data.content !== null && 'value' in data.content && typeof data.content.value === 'string') {
+                  // Handle the { format: '...', value: '...' } case specifically
+                  console.warn("Received message content as object, extracting value:", data.content);
+                  messageText = data.content.value;
+                } else {
+                  // Fallback for other unexpected types (null, other objects, etc.)
+                  console.warn("Received unexpected message content type, attempting to stringify:", data.content);
+                  try {
+                    messageText = String(data.content); // Use String() for broader conversion
+                  } catch {
+                    messageText = "[Unsupported message content]";
+                  }
+                }
+                // --- End Frontend Safeguard ---
+
+                responseText = messageText; // Update responseText if needed
+                setMessages(prev => [
+                  // Remove previous typing indicator if present
+                  ...prev.filter(m => !(m.sender === 'agent' && m.id === 'typing-indicator')),
+                  // Add the new agent message with the processed string content
+                  { id: "agent-" + Date.now().toString(), text: messageText, sender: "agent" }
+                ]);
+                setIsTyping(false);
+              } else if (data.type === "function") {
+                const funcCall: MessageType = {
+                  id: "func-" + Date.now().toString(),
+                  text: `Calling function: ${data.data}`,
+                  sender: "function",
+                  functionName: data.data,
+                  functionParams: data.parameters,
+                };
+                functionCalls.push(funcCall);
+                setMessages((prev) => [...prev, funcCall]);
+              } else if (data.type === "functionResult") {
+                // Add the result to the most recent function call
+                if (functionCalls.length > 0) {
+                  const lastFuncCall = functionCalls[functionCalls.length - 1];
+                  lastFuncCall.functionResult = data.data;
+
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === lastFuncCall.id
+                        ? { ...m, functionResult: data.data }
+                        : m
+                    )
+                  );
+                }
+              } else if (data.type === "error") {
+                console.error("API Error:", data.message);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: "error-" + Date.now().toString(),
+                    text: `Error: ${data.message}`,
+                    sender: "agent",
+                  },
+                ]);
+                setIsTyping(false);
+              } else if (data.type === "end") {
+                // Handle end of stream
+                setIsWaitingForResponse(false);
+                setIsTyping(false);
+              }
+            } catch (error) {
+              console.error("Error parsing event:", error, event);
+            }
+          }
+        }
+      };
+
+      processEvents().catch((error) => {
+        console.error("Error processing stream:", error);
+        setIsTyping(false);
+        setIsWaitingForResponse(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "error-" + Date.now().toString(),
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+            sender: "agent",
+          },
+        ]);
+      });
+    } catch (error) {
+      console.error("Error calling API:", error);
+      setIsTyping(false);
+      setIsWaitingForResponse(false);
       setMessages((prev) => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
-          text: agentResponses[randomIndex],
+          id: "error-" + Date.now().toString(),
+          text: `Error: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
           sender: "agent",
         },
       ]);
-      setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const toggleMode = (mode: "search" | "reason" | "jdi") => {
@@ -514,6 +687,7 @@ export default function Home() {
                   onSendMessage={sendMessage}
                   placeholder="Type something great here or drop files..."
                   showBottomSection={false}
+                  isDisabled={isWaitingForResponse}
                 />
               </div>
             </div>
@@ -531,26 +705,65 @@ export default function Home() {
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   <div className="flex flex-col gap-6">
-                    {messages.map((msg, index) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${
-                          msg.sender === "user"
-                            ? "justify-end"
-                            : "justify-start"
-                        } w-full ${index === 0 ? "-mt-4" : ""}`}
-                      >
-                        <div
-                          className={`${
-                            msg.sender === "user"
-                              ? "px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%]"
-                              : "px-3 py-2 text-gray-900 rounded-lg max-w-[85%]"
-                          } break-words`}
-                        >
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))}
+                    {messages.map((msg, index) => {
+                      if (msg.sender === "user") {
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex justify-end w-full ${
+                              index === 0 ? "-mt-4" : ""
+                            }`}
+                          >
+                            <div className="px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%] break-words">
+                              {msg.text}
+                            </div>
+                          </div>
+                        );
+                      } else if (msg.sender === "agent") {
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex justify-start w-full ${
+                              index === 0 ? "-mt-4" : ""
+                            }`}
+                          >
+                            <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words">
+                              {msg.text}
+                            </div>
+                          </div>
+                        );
+                      } else if (msg.sender === "function") {
+                        // Render function calls differently
+                        return (
+                          <div
+                            key={msg.id}
+                            className="flex justify-start w-full items-center my-2"
+                          >
+                            <div className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md max-w-[90%] text-sm border border-gray-200">
+                              <div className="font-medium text-xs text-gray-600 mb-0.5">
+                                Function call:{" "}
+                                <span className="text-blue-600">
+                                  {msg.functionName}
+                                </span>
+                              </div>
+                              {msg.functionResult && (
+                                <div className="text-xs mt-2 text-green-600">
+                                  {msg.functionResult.success
+                                    ? "✓ Success"
+                                    : "✗ Failed"}
+                                  :{" "}
+                                  {msg.functionResult.message ||
+                                    (msg.functionResult.success
+                                      ? "Operation completed"
+                                      : "Operation failed")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
                     {isTyping && (
                       <div className="flex justify-start w-full">
                         <div className="px-3 py-2 bg-gray-50 rounded-lg">
@@ -589,6 +802,7 @@ export default function Home() {
                       showBottomSection={true}
                       modes={modes}
                       toggleMode={toggleMode}
+                      isDisabled={isWaitingForResponse}
                     />
                   </div>
                 </div>
