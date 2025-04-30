@@ -216,7 +216,9 @@ function InputBox({
                     };
 
                     // Add focus event listener to window to detect dialog close
-                    window.addEventListener("focus", handleFocus, { once: true });
+                    window.addEventListener("focus", handleFocus, {
+                      once: true,
+                    });
                   }
                 }}
                 disabled={iconState !== "idle" || isDisabled}
