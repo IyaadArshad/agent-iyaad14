@@ -3,9 +3,6 @@ import Image from "next/image";
 import { Sidebar } from "@/components/Sidebar";
 import { useState, useRef, useEffect } from "react";
 import React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-// Add custom markdown styles
 import "./markdown-styles.css";
 import {
   Tooltip,
