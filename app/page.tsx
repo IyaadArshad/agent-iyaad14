@@ -794,7 +794,7 @@ export default function Home() {
               <p className="text-gray-500 mb-6 text-md text-center">
                 Type a message to start your BRS generation process
               </p>
-              <div className="w-5/5 hover:w-5/4 focus-within:w-5/4 transition-all duration-200 mb-8">
+              <div className="w-5/5 hover:w-5/4 focus-within:w-5/4 transition-all duration-300 mb-8">
                 <InputBox
                   inputValue={inputValue}
                   setInputValue={setInputValue}
