@@ -369,7 +369,7 @@ function InputBox({
                       side="top"
                       className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
                     >
-                      <p>Enhances complex reasoning capabilities</p>
+                      <p>Turns on the ability to reason</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -726,10 +726,10 @@ export default function Home() {
             }}
           >
             <div className="flex-grow relative overflow-hidden flex flex-col">
-              <div className="absolute inset-0 overflow-y-auto pb-24">
+              <div className="absolute inset-0 overflow-y-auto pb-40">
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
-                  <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-6 mb-8">
                     {messages.map((msg, index) => {
                       if (msg.sender === "user") {
                         return (
