@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SearchIcon, BrainCircuitIcon, ZapIcon } from "lucide-react";
+import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 
 interface InputBoxProps {
   inputValue: string;
@@ -484,6 +485,7 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
   const [welcomeOpacity, setWelcomeOpacity] = useState(1);
   const [chatOpacity, setChatOpacity] = useState(0);
   const [modes, setModes] = useState({
@@ -556,6 +558,7 @@ export default function Home() {
     setInputValue("");
     setIsWaitingForResponse(true);
     setIsTyping(true);
+    setShowSpinner(true);
 
     setTimeout(() => {
       setShowChat(true);
@@ -601,6 +604,8 @@ export default function Home() {
 
       let responseText = "";
       let functionCalls: MessageType[] = [];
+      let agentMessageId = "agent-" + Date.now().toString();
+      let agentMessageAdded = false;
 
       const processEvents = async () => {
         let done = false;
@@ -628,7 +633,6 @@ export default function Home() {
               const data = JSON.parse(jsonStr);
 
               if (data.type === "message") {
-                // --- Frontend Safeguard ---
                 let messageText = "";
                 if (typeof data.content === "string") {
                   messageText = data.content;
@@ -638,42 +642,50 @@ export default function Home() {
                   "value" in data.content &&
                   typeof data.content.value === "string"
                 ) {
-                  // Handle the { format: '...', value: '...' } case specifically
                   console.warn(
                     "Received message content as object, extracting value:",
                     data.content
                   );
                   messageText = data.content.value;
                 } else {
-                  // Fallback for other unexpected types (null, other objects, etc.)
                   console.warn(
                     "Received unexpected message content type, attempting to stringify:",
                     data.content
                   );
                   try {
-                    messageText = String(data.content); // Use String() for broader conversion
+                    messageText = String(data.content);
                   } catch {
                     messageText = "[Unsupported message content]";
                   }
                 }
-                // --- End Frontend Safeguard ---
 
-                responseText = messageText; // Update responseText if needed
-                setMessages((prev) => [
-                  // Remove previous typing indicator if present
-                  ...prev.filter(
-                    (m) =>
-                      !(m.sender === "agent" && m.id === "typing-indicator")
-                  ),
-                  // Add the new agent message with the processed string content
-                  {
-                    id: "agent-" + Date.now().toString(),
-                    text: messageText,
-                    sender: "agent",
-                  },
-                ]);
-                setIsTyping(false);
+                if (isTyping) {
+                  setIsTyping(false);
+                }
+
+                responseText = messageText;
+
+                if (!agentMessageAdded) {
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: agentMessageId,
+                      text: messageText,
+                      sender: "agent",
+                    },
+                  ]);
+                  agentMessageAdded = true;
+                } else {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === agentMessageId ? { ...m, text: messageText } : m
+                    )
+                  );
+                }
               } else if (data.type === "function") {
+                if (isTyping) {
+                  setIsTyping(false);
+                }
                 const funcCall: MessageType = {
                   id: "func-" + Date.now().toString(),
                   text: `Calling function: ${data.data}`,
@@ -684,7 +696,6 @@ export default function Home() {
                 functionCalls.push(funcCall);
                 setMessages((prev) => [...prev, funcCall]);
               } else if (data.type === "functionResult") {
-                // Add the result to the most recent function call
                 if (functionCalls.length > 0) {
                   const lastFuncCall = functionCalls[functionCalls.length - 1];
                   lastFuncCall.functionResult = data.data;
@@ -699,6 +710,9 @@ export default function Home() {
                 }
               } else if (data.type === "error") {
                 console.error("API Error:", data.message);
+                if (isTyping) {
+                  setIsTyping(false);
+                }
                 setMessages((prev) => [
                   ...prev,
                   {
@@ -707,22 +721,28 @@ export default function Home() {
                     sender: "agent",
                   },
                 ]);
-                setIsTyping(false);
               } else if (data.type === "end") {
-                // Handle end of stream
                 setIsWaitingForResponse(false);
-                setIsTyping(false);
+                if (isTyping) {
+                  setIsTyping(false);
+                }
+                setShowSpinner(false);
               }
             } catch (error) {
               console.error("Error parsing event:", error, event);
+              if (isTyping) {
+                setIsTyping(false);
+              }
             }
           }
         }
+        setShowSpinner(false);
       };
 
       processEvents().catch((error) => {
         console.error("Error processing stream:", error);
         setIsTyping(false);
+        setShowSpinner(false);
         setIsWaitingForResponse(false);
         setMessages((prev) => [
           ...prev,
@@ -738,6 +758,7 @@ export default function Home() {
     } catch (error) {
       console.error("Error calling API:", error);
       setIsTyping(false);
+      setShowSpinner(false);
       setIsWaitingForResponse(false);
       setMessages((prev) => [
         ...prev,
@@ -842,15 +863,12 @@ export default function Home() {
                               index === 0 ? "-mt-4" : ""
                             }`}
                           >
-                            <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words prose prose-sm">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {msg.text}
-                              </ReactMarkdown>
+                            <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words">
+                              <AnimatedMarkdown content={msg.text} />
                             </div>
                           </div>
                         );
                       } else if (msg.sender === "function") {
-                        // Render function calls differently
                         return (
                           <div
                             key={msg.id}
@@ -881,13 +899,15 @@ export default function Home() {
                       }
                       return null;
                     })}
-                    {isTyping && (
+                    {showSpinner && (
                       <div className="flex justify-start w-full">
                         <div
-                          className="animate-fade-in ml-2 mt-2 border-1 rounded-full"
+                          className={`ml-2 mt-2 border-1 rounded-full ${
+                            isTyping ? "animate-fade-in" : "animate-fade-out"
+                          }`}
                           style={{
-                            animationDelay: "75ms",
-                            opacity: 0,
+                            animationDelay: isTyping ? "75ms" : "0ms",
+                            opacity: isTyping ? 0 : 1,
                             animationFillMode: "forwards",
                           }}
                         >

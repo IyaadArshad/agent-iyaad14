@@ -4,6 +4,8 @@
     /* General prose styles */
     color: inherit;
     max-width: none;
+    font-size: 0.875rem;
+    line-height: 1.7;
 }
 
 /* Headers */
@@ -18,36 +20,39 @@
 .prose h2 {
     font-size: 1.25rem;
     font-weight: 600;
-    margin-top: 1.4em;
+    margin-top: 1.5em;
     margin-bottom: 0.5em;
+    line-height: 1.3;
 }
 
 .prose h3 {
     font-size: 1.125rem;
     font-weight: 600;
-    margin-top: 1.3em;
-    margin-bottom: 0.4em;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
 }
 
 .prose h4 {
     font-size: 1rem;
     font-weight: 600;
-    margin-top: 1.2em;
-    margin-bottom: 0.3em;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
 }
 
 /* Lists */
 .prose ul {
     list-style-type: disc;
     margin-top: 0.5em;
-    margin-bottom: 0.5em;
+    margin-bottom: 1em;
     padding-left: 1.5em;
 }
 
 .prose ol {
     list-style-type: decimal;
     margin-top: 0.5em;
-    margin-bottom: 0.5em;
+    margin-bottom: 1em;
     padding-left: 1.5em;
 }
 
@@ -82,21 +87,21 @@
     color: #1A479D;
     font-weight: 500;
     font-size: 0.875em;
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: #f3f4f6;
     padding: 0.2em 0.4em;
-    border-radius: 0.25em;
+    border-radius: 0.25rem;
 }
 
 .prose pre {
-    background-color: #f9fafb;
-    border-radius: 0.375rem;
+    background-color: #f3f4f6;
+    border-radius: 0.25rem;
     color: #1f2937;
     font-size: 0.875em;
     line-height: 1.7142857;
     margin-top: 1.7142857em;
     margin-bottom: 1.7142857em;
     overflow-x: auto;
-    padding: 0.8571429em 1.1428571em;
+    padding: 1em;
 }
 
 .prose pre code {
@@ -158,7 +163,7 @@
 /* Improve spacing */
 .prose p {
     margin-top: 0.8em;
-    margin-bottom: 0.8em;
+    margin-bottom: 1em;
 }
 
 /* Indent nested lists correctly */
@@ -213,3 +218,96 @@
 .animate-fade-in {
   animation: fade-in 0.5s ease-out forwards;
 }
+
+/* New styles for .animate-word */
+.animate-word {
+  display: inline-block;
+  /* Start invisible */
+  opacity: 0;
+  /* Animation starts from opacity 0 */
+  animation: fadeInWord 0.25s ease-out forwards;
+}
+
+@keyframes fadeInWord {
+  /* Only define the final state, rely on initial opacity: 0 */
+  to {
+    opacity: 1;
+  }
+}
+
+/* Add fade-out animation for spinner */
+.animate-fade-out {
+  animation: fadeOut 0.4s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Commented out old/conflicting animation definitions */
+ /*
+.fade-word {
+  opacity: 0;
+  display: inline-block;
+  animation: fadeIn 0.4s forwards;
+}
+
+@keyframes fadeIn {
+  0% { 
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-element {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-in-out forwards;
+}
+
+.animated-element {
+  opacity: 1;
+}
+
+.animated-word {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.fade-in-markdown {
+  animation: fadeInMarkdown 0.3s ease-out;
+}
+
+.fade-in-markdown p,
+.fade-in-markdown h1,
+.fade-in-markdown h2,
+.fade-in-markdown h3,
+.fade-in-markdown h4,
+.fade-in-markdown ul,
+.fade-in-markdown ol,
+.fade-in-markdown li,
+.fade-in-markdown blockquote,
+.fade-in-markdown pre {
+  animation: fadeInElement 0.5s ease-out;
+}
+
+@keyframes fadeInMarkdown {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInElement {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+*/
