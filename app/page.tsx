@@ -29,6 +29,7 @@ interface InputBoxProps {
   toggleMode?: (mode: "search" | "reason" | "jdi") => void;
   className?: string;
   isDisabled?: boolean;
+  uploadFiles?: (files: FileList) => Promise<void>;
 }
 
 function InputBox({
@@ -41,6 +42,7 @@ function InputBox({
   toggleMode = () => {},
   className = "",
   isDisabled = false,
+  uploadFiles = async () => {},
 }: InputBoxProps) {
   const [isMultiline, setIsMultiline] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -98,24 +100,28 @@ function InputBox({
     e.preventDefault();
     setIsDragging(false);
 
-    // Add animation states similar to the file input handling
-    setIconState("fadeLoading");
-    await new Promise((res) => setTimeout(res, 200));
-    await new Promise((res) => setTimeout(res, 400));
-
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setIconState("success");
-      const files = Array.from(e.dataTransfer.files);
-      const fileNames = files.map((file) => file.name).join(", ");
-      setInputValue(
-        (prev: string) => prev + (prev ? " " : "") + `Uploaded: ${fileNames}`
-      );
+      setIconState("loading");
+      try {
+        await uploadFiles(e.dataTransfer.files);
+        setIconState("success");
+        const fileNames = Array.from(e.dataTransfer.files).map((file) => file.name).join(", ");
+        setInputValue(
+          (prev: string) => prev + (prev ? " " : "") + `Uploaded files: ${fileNames}. Please analyze these files for me.`
+        );
+        await new Promise((res) => setTimeout(res, 900));
+        setIconState("idle");
+      } catch (error) {
+        console.error("Error uploading dropped files:", error);
+        setIconState("error");
+        await new Promise((res) => setTimeout(res, 900));
+        setIconState("idle");
+      }
     } else {
       setIconState("error");
+      await new Promise((res) => setTimeout(res, 900));
+      setIconState("idle");
     }
-
-    await new Promise((res) => setTimeout(res, 900));
-    setIconState("idle");
   };
 
   return (
@@ -189,7 +195,6 @@ function InputBox({
                 onClick={async () => {
                   if (isDisabled) return;
 
-                  await new Promise((res) => setTimeout(res, 50));
                   setIconState("loading");
 
                   // Create and set up a timer to reset icon state if dialog is canceled
@@ -327,23 +332,31 @@ function InputBox({
                   multiple
                   className="hidden"
                   onChange={async (e) => {
-                    setIconState("fadeLoading");
-                    await new Promise((res) => setTimeout(res, 200));
-                    await new Promise((res) => setTimeout(res, 400));
                     const files = e.target.files;
-                    if (files && files.length > 0) {
+                    if (!files || files.length === 0) {
+                      setIconState("idle");
+                      return;
+                    }
+                    
+                    try {
+                      setIconState("fadeLoading");
+                      await new Promise((res) => setTimeout(res, 200));
+                      
+                      await uploadFiles(files);
+                      
                       setIconState("success");
                       const fileNames = Array.from(files)
                         .map((file) => file.name)
                         .join(", ");
                       setInputValue(
                         (prev: string) =>
-                          prev + (prev ? " " : "") + `Uploaded: ${fileNames}`
+                          prev + (prev ? " " : "") + `Uploaded files: ${fileNames}. Please analyze these files for me.`
                       );
-                    } else {
-                      // File selection was canceled, revert to idle state
-                      setIconState("idle");
+                    } catch (error) {
+                      console.error("Error uploading files:", error);
+                      setIconState("error");
                     }
+                    
                     await new Promise((res) => setTimeout(res, 900));
                     setIconState("idle");
                   }}
@@ -472,12 +485,53 @@ export default function Home() {
     jdi: false,
   });
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
+
+  // Function to handle file uploads
+  const uploadFiles = async (files: FileList): Promise<void> => {
+    if (!files || files.length === 0) return;
+
+    const uploadedIds: string[] = [];
+    let uploadedFileNames: string[] = [];
+
+    try {
+      // Upload each file to the vector store
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        const response = await fetch("/api/files/uploadToVectorStore", {
+          method: "POST",
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to upload file: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        if (result.success) {
+          uploadedIds.push(result.fileId);
+          uploadedFileNames.push(file.name);
+        } else {
+          throw new Error(result.message || "Error uploading file");
+        }
+      }
+      
+      // Update state with the uploaded file IDs
+      setUploadedFileIds(prev => [...prev, ...uploadedIds]);
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      throw error;
+    }
+  };
 
   const sendMessage = async (msg: string) => {
     if (!msg.trim() || isWaitingForResponse) return;
@@ -524,6 +578,7 @@ export default function Home() {
         body: JSON.stringify({
           messages: conversationMessages,
           jdiMode: modes.jdi,
+          uploadedFileIds: uploadedFileIds.length > 0 ? uploadedFileIds : [],
         }),
       });
 
@@ -740,6 +795,7 @@ export default function Home() {
                   placeholder="Type something great here or drop files..."
                   showBottomSection={false}
                   isDisabled={isWaitingForResponse}
+                  uploadFiles={uploadFiles}
                 />
               </div>
             </div>
@@ -857,6 +913,7 @@ export default function Home() {
                       modes={modes}
                       toggleMode={toggleMode}
                       isDisabled={isWaitingForResponse}
+                      uploadFiles={uploadFiles}
                     />
                   </div>
                 </div>
