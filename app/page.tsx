@@ -191,11 +191,33 @@ function InputBox({
 
                   await new Promise((res) => setTimeout(res, 50));
                   setIconState("loading");
-                  await new Promise((res) => setTimeout(res, 450));
+
+                  // Create and set up a timer to reset icon state if dialog is canceled
+                  const resetTimer = setTimeout(() => {
+                    setIconState("idle"); // Reset to idle after timeout
+                  }, 5000); // 5 second timeout as fallback
+
+                  // Click the file input
                   const fileInput = document.getElementById(
                     "chat-file-input"
                   ) as HTMLInputElement | null;
-                  if (fileInput) fileInput.click();
+                  if (fileInput) {
+                    fileInput.click();
+
+                    // Listen for focus to detect when dialog is closed without selection
+                    const handleFocus = () => {
+                      clearTimeout(resetTimer);
+                      // Small delay to check if files were selected
+                      setTimeout(() => {
+                        if (!fileInput.files || fileInput.files.length === 0) {
+                          setIconState("idle");
+                        }
+                      }, 100);
+                    };
+
+                    // Add focus event listener to window to detect dialog close
+                    window.addEventListener("focus", handleFocus, { once: true });
+                  }
                 }}
                 disabled={iconState !== "idle" || isDisabled}
               >
@@ -243,11 +265,13 @@ function InputBox({
                       cy="12"
                       r="10"
                       stroke="currentColor"
-                      strokeWidth="4"
+                      strokeWidth="1.5"
                     />
                     <path
                       className="opacity-75"
-                      fill="currentColor"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
                       d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
                     />
                   </svg>
@@ -266,7 +290,7 @@ function InputBox({
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="3"
+                    strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
@@ -286,7 +310,7 @@ function InputBox({
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="3"
+                    strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
@@ -315,7 +339,8 @@ function InputBox({
                           prev + (prev ? " " : "") + `Uploaded: ${fileNames}`
                       );
                     } else {
-                      setIconState("error");
+                      // File selection was canceled, revert to idle state
+                      setIconState("idle");
                     }
                     await new Promise((res) => setTimeout(res, 900));
                     setIconState("idle");
