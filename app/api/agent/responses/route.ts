@@ -313,12 +313,12 @@ export async function POST(request: NextRequest) {
               strict: true,
             },
             {
-                type: "file_search",
-                vector_store_ids: [VECTOR_STORE_ID],
-                max_num_results: 20
-            }
+              type: "file_search",
+              vector_store_ids: [VECTOR_STORE_ID],
+              max_num_results: 20,
+            },
           ];
-          
+
           // Create a request object for the OpenAI API
           const requestObj: any = {
             model: "gpt-4.1-mini",
@@ -338,16 +338,16 @@ export async function POST(request: NextRequest) {
             max_output_tokens: 2048,
             top_p: 1,
           };
-          
-          // No need to add a separate retrieval tool since we already have a file_search tool 
+
+          // No need to add a separate retrieval tool since we already have a file_search tool
           // in the functionTools array with the proper configuration:
           // {
-          //     type: "file_search", 
+          //     type: "file_search",
           //     vector_store_ids: [VECTOR_STORE_ID],
           //     max_num_results: 20
           // }
           // The error occurred because 'retrieval' is not a valid tool type
-          // Valid types are: 'function', 'file_search', 'web_search_preview', 
+          // Valid types are: 'function', 'file_search', 'web_search_preview',
           // 'web_search_preview_2025_03_11', and 'computer_use_preview'
 
           // Call OpenAI responses API with the correctly structured request

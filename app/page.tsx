@@ -105,9 +105,14 @@ function InputBox({
       try {
         await uploadFiles(e.dataTransfer.files);
         setIconState("success");
-        const fileNames = Array.from(e.dataTransfer.files).map((file) => file.name).join(", ");
+        const fileNames = Array.from(e.dataTransfer.files)
+          .map((file) => file.name)
+          .join(", ");
         setInputValue(
-          (prev: string) => prev + (prev ? " " : "") + `Uploaded files: ${fileNames}. Please analyze these files for me.`
+          (prev: string) =>
+            prev +
+            (prev ? " " : "") +
+            `Uploaded files: ${fileNames}. Please analyze these files for me.`
         );
         await new Promise((res) => setTimeout(res, 900));
         setIconState("idle");
@@ -337,26 +342,28 @@ function InputBox({
                       setIconState("idle");
                       return;
                     }
-                    
+
                     try {
                       setIconState("fadeLoading");
                       await new Promise((res) => setTimeout(res, 200));
-                      
+
                       await uploadFiles(files);
-                      
+
                       setIconState("success");
                       const fileNames = Array.from(files)
                         .map((file) => file.name)
                         .join(", ");
                       setInputValue(
                         (prev: string) =>
-                          prev + (prev ? " " : "") + `Uploaded files: ${fileNames}. Please analyze these files for me.`
+                          prev +
+                          (prev ? " " : "") +
+                          `Uploaded files: ${fileNames}. Please analyze these files for me.`
                       );
                     } catch (error) {
                       console.error("Error uploading files:", error);
                       setIconState("error");
                     }
-                    
+
                     await new Promise((res) => setTimeout(res, 900));
                     setIconState("idle");
                   }}
@@ -505,17 +512,17 @@ export default function Home() {
       for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append("file", file);
-        
+
         const response = await fetch("/api/files/uploadToVectorStore", {
           method: "POST",
           body: formData,
         });
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`Failed to upload file: ${errorText}`);
         }
-        
+
         const result = await response.json();
         if (result.success) {
           uploadedIds.push(result.fileId);
@@ -524,9 +531,9 @@ export default function Home() {
           throw new Error(result.message || "Error uploading file");
         }
       }
-      
+
       // Update state with the uploaded file IDs
-      setUploadedFileIds(prev => [...prev, ...uploadedIds]);
+      setUploadedFileIds((prev) => [...prev, ...uploadedIds]);
     } catch (error) {
       console.error("Error uploading files:", error);
       throw error;
