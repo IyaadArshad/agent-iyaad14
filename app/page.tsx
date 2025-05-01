@@ -15,6 +15,7 @@ import {
   BrainCircuitIcon,
   ZapIcon,
   SquareIcon,
+  RocketIcon,
 } from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 
@@ -29,8 +30,9 @@ interface InputBoxProps {
     search: boolean;
     reason: boolean;
     jdi: boolean;
+    lite: boolean; // Add lite mode
   };
-  toggleMode?: (mode: "search" | "reason" | "jdi") => void;
+  toggleMode?: (mode: "search" | "reason" | "jdi" | "lite") => void; // Update toggleMode to include lite
   className?: string;
   isWaitingForResponse?: boolean;
   uploadFiles?: (files: FileList) => Promise<void>;
@@ -43,7 +45,7 @@ function InputBox({
   onStopResponse = () => {},
   placeholder = "Type something great here or drop files...",
   showBottomSection = false,
-  modes = { search: false, reason: false, jdi: false },
+  modes = { search: false, reason: false, jdi: false, lite: false }, // Add lite default
   toggleMode = () => {},
   className = "",
   isWaitingForResponse = false,
@@ -199,8 +201,14 @@ function InputBox({
             <div className="flex items-center px-4 py-2 bg-gray-50 rounded-b-2xl justify-between">
               <button
                 type="button"
-                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative`}
+                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 ${
+                  modes.lite
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-gray-100 hover:cursor-pointer"
+                } transition-all text-gray-600 relative`}
                 onClick={async () => {
+                  if (modes.lite) return; // Disable file upload in lite mode
+
                   setIconState("loading");
 
                   // Create and set up a timer to reset icon state if dialog is canceled
@@ -337,6 +345,8 @@ function InputBox({
                   multiple
                   className="hidden"
                   onChange={async (e) => {
+                    if (modes.lite) return; // Ignore file uploads in lite mode
+
                     const files = e.target.files;
                     if (!files || files.length === 0) {
                       setIconState("idle");
@@ -375,12 +385,16 @@ function InputBox({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        className={`p-1.5 rounded-md hover:cursor-pointer transition-all flex items-center gap-1 ${
-                          modes.search
+                        className={`p-1.5 rounded-md ${
+                          modes.lite
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:cursor-pointer hover:bg-gray-200"
+                        } transition-all flex items-center gap-1 ${
+                          modes.search && !modes.lite
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
-                            : "text-gray-600 hover:bg-gray-200"
+                            : "text-gray-600"
                         }`}
-                        onClick={() => toggleMode("search")}
+                        onClick={() => !modes.lite && toggleMode("search")}
                       >
                         <SearchIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Search</span>
@@ -390,7 +404,11 @@ function InputBox({
                       side="top"
                       className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
                     >
-                      <p>Enables web search capabilities</p>
+                      <p>
+                        {modes.lite
+                          ? "Search is disabled in lite mode"
+                          : "Enables web search capabilities"}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -399,12 +417,16 @@ function InputBox({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        className={`p-1.5 rounded-md hover:cursor-pointer transition-all flex items-center gap-1 ${
-                          modes.reason
+                        className={`p-1.5 rounded-md ${
+                          modes.lite
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:cursor-pointer hover:bg-gray-200"
+                        } transition-all flex items-center gap-1 ${
+                          modes.reason && !modes.lite
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
-                            : "text-gray-600 hover:bg-gray-200"
+                            : "text-gray-600"
                         }`}
-                        onClick={() => toggleMode("reason")}
+                        onClick={() => !modes.lite && toggleMode("reason")}
                       >
                         <BrainCircuitIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Reason</span>
@@ -414,7 +436,11 @@ function InputBox({
                       side="top"
                       className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
                     >
-                      <p>Turns on the ability to reason</p>
+                      <p>
+                        {modes.lite
+                          ? "Reasoning is disabled in lite mode"
+                          : "Turns on the ability to reason"}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -430,7 +456,7 @@ function InputBox({
                         }`}
                         onClick={() => toggleMode("jdi")}
                       >
-                        <ZapIcon className="h-3.5 w-3.5" />
+                        <RocketIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">JDI Mode</span>
                       </button>
                     </TooltipTrigger>
@@ -441,6 +467,33 @@ function InputBox({
                       <p>
                         &quot;Just Do It&quot; - follows instructions without
                         asking questions
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        className={`p-1.5 rounded-md hover:cursor-pointer transition-all flex items-center gap-1 ${
+                          modes.lite
+                            ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
+                            : "text-gray-600 hover:bg-gray-200"
+                        }`}
+                        onClick={() => toggleMode("lite")}
+                      >
+                        <ZapIcon height={14} width={14} />
+                        <span className="text-xs">Lite Mode</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
+                    >
+                      <p>
+                        Lightweight mode - text only, no file operations or
+                        advanced features
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -489,6 +542,7 @@ export default function Home() {
     search: false,
     reason: false,
     jdi: false,
+    lite: false, // Add lite mode
   });
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -628,14 +682,25 @@ export default function Home() {
       currentResponseController.current = new AbortController();
       const signal = currentResponseController.current.signal;
 
-      // Call the agent API with streaming response handling
-      const response = await fetch("/api/agent/responses", {
+      // Determine which API endpoint to call based on lite mode
+      const apiEndpoint = modes.lite
+        ? "/api/agent/lite/responses"
+        : "/api/agent/responses";
+
+      // Call the appropriate agent API with streaming response handling
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: conversationMessages,
           jdiMode: modes.jdi,
-          uploadedFileIds: uploadedFileIds.length > 0 ? uploadedFileIds : [],
+          // Only include uploadedFileIds when not in lite mode
+          ...(modes.lite
+            ? {}
+            : {
+                uploadedFileIds:
+                  uploadedFileIds.length > 0 ? uploadedFileIds : [],
+              }),
         }),
         signal,
       });
@@ -732,7 +797,8 @@ export default function Home() {
                       )
                     );
                   }
-                } else if (data.type === "function") {
+                } else if (data.type === "function" && !modes.lite) {
+                  // Only process function calls when not in lite mode
                   if (isTyping) {
                     setIsTyping(false);
                   }
@@ -745,7 +811,8 @@ export default function Home() {
                   };
                   functionCalls.push(funcCall);
                   setMessages((prev) => [...prev, funcCall]);
-                } else if (data.type === "functionResult") {
+                } else if (data.type === "functionResult" && !modes.lite) {
+                  // Only process function results when not in lite mode
                   if (functionCalls.length > 0) {
                     const lastFuncCall =
                       functionCalls[functionCalls.length - 1];
@@ -780,7 +847,7 @@ export default function Home() {
                   setShowSpinner(false);
                 }
               } catch (error) {
-                console.error("Error parsing event:", error, eventString); // Log the problematic string
+                console.error("Error parsing event:", error, eventString);
                 if (isTyping) {
                   setIsTyping(false);
                 }
@@ -838,11 +905,28 @@ export default function Home() {
     }
   };
 
-  const toggleMode = (mode: "search" | "reason" | "jdi") => {
-    setModes((prev) => ({
-      ...prev,
-      [mode]: !prev[mode],
-    }));
+  const toggleMode = (mode: "search" | "reason" | "jdi" | "lite") => {
+    if (mode === "lite") {
+      // When toggling lite mode, disable search and reason if enabling lite
+      setModes((prev) => {
+        const newLiteState = !prev.lite;
+        return {
+          search: newLiteState ? false : prev.search,
+          reason: newLiteState ? false : prev.reason,
+          jdi: prev.jdi,
+          lite: newLiteState,
+        };
+      });
+    } else if (modes.lite && (mode === "search" || mode === "reason")) {
+      // If in lite mode, don't allow enabling search or reason
+      return;
+    } else {
+      // Standard toggle for other modes
+      setModes((prev) => ({
+        ...prev,
+        [mode]: !prev[mode],
+      }));
+    }
   };
 
   return (
