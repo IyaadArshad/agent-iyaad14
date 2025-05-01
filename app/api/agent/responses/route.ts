@@ -321,7 +321,7 @@ export async function POST(request: NextRequest) {
 
           // Create a request object for the OpenAI API
           const requestObj: any = {
-            model: "gpt-4.1-mini",
+            model: "gpt-4.1",
             input: [
               {
                 role: "system",

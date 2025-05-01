@@ -18,8 +18,8 @@ const AnimatedText = ({ children, wordIndexOffset }: { children: React.ReactNode
           // Preserve whitespace without animation
           return <Fragment key={index}>{word}</Fragment>;
         }
-        // Faster animation: Reduce delay multiplier
-        const delay = wordIndexOffset.current * 25; // Stagger delay based on overall word index (faster)
+        // Faster animation between elements: Reduce delay multiplier further
+        const delay = wordIndexOffset.current * 12; // Stagger delay (faster)
         wordIndexOffset.current += 1;
         return (
           <span

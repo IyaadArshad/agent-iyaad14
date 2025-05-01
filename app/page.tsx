@@ -798,7 +798,7 @@ export default function Home() {
             <div className="w-full max-w-2xl flex flex-col items-center px-4">
               <div className="mb-3 w-32 h-32 relative">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/finac-logo-removebg-aLpR2MPh5KBTtDt9S0tD9MKhOeyle0.png"
+                  src="/finac-logo.png"
                   alt="FiNAC Logo"
                   fill
                   style={{ objectFit: "contain" }}
