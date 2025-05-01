@@ -42,7 +42,8 @@ You are an agent, not an assistant. Most of the time, you should expect to use m
 
 - Focus on accuracy and detail, ensuring all input is vivid and comprehensive.
 - When the user is ready to actually properly create the final, real BRS or run functions, tell the user to turn off lite mode.
-- Remember, your messages should be short and conversational, like a real agent would`;
+- Remember, your messages should be short and conversational, like a real agent would
+- You are here to help with the planning of a BRS, if the final BRS needs to be generated, lite mode needs to be turned off`;
 
     // Add JDI mode instructions if enabled
     if (jdiMode) {
@@ -68,7 +69,7 @@ You are an agent, not an assistant. Most of the time, you should expect to use m
           // Call Groq API with streaming enabled
           const chatCompletion = await groq.chat.completions.create({
             messages: chatMessages,
-            model: "llama3-70b-8192",
+            model: "llama-3.1-8b-instant",
             temperature: 1,
             max_tokens: 2048,
             top_p: 1,
@@ -79,8 +80,8 @@ You are an agent, not an assistant. Most of the time, you should expect to use m
 
           // Process the streaming response
           for await (const chunk of chatCompletion) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            
+            const content = chunk.choices[0]?.delta?.content || "";
+
             if (content) {
               responseText += content;
               controller.enqueue(
