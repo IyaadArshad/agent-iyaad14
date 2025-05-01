@@ -22,7 +22,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { registerRequest, removeRequest, shouldCancelRequest } from "../stop/route";
+import {
+  registerRequest,
+  removeRequest,
+  shouldCancelRequest,
+} from "../stop/route";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -172,12 +176,14 @@ async function read_file(file_name: string) {
 
 export async function POST(request: NextRequest) {
   // Generate a unique request ID for this conversation
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-  
+  const requestId = `req_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(2, 15)}`;
+
   try {
     // Register this request as active
     registerRequest(requestId);
-    
+
     const body = await request.json();
     const { messages, jdiMode = false, uploadedFileIds = [] } = body;
 
@@ -369,8 +375,8 @@ export async function POST(request: NextRequest) {
           const response = await openai.responses.create(requestObj);
 
           let messageContentToSend: string | null = null;
-          let messageSent = false; 
-          let hasToolCalls = false; 
+          let messageSent = false;
+          let hasToolCalls = false;
 
           // Process response content
           // First, check for output_text at the root level (for backward compatibility)
@@ -841,7 +847,7 @@ export async function POST(request: NextRequest) {
     console.error("Error in POST handler:", error);
     // Always remove the request ID in case of error
     removeRequest(requestId);
-    
+
     return NextResponse.json(
       {
         success: false,

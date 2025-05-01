@@ -10,7 +10,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { SearchIcon, BrainCircuitIcon, ZapIcon, SquareIcon } from "lucide-react";
+import {
+  SearchIcon,
+  BrainCircuitIcon,
+  ZapIcon,
+  SquareIcon,
+} from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 
 interface InputBoxProps {
@@ -164,7 +169,11 @@ function InputBox({
         <button
           className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
             isMultiline ? "top-4" : "top-[28px] transform -translate-y-1/2"
-          } ${isDisabled && !isWaitingForResponse ? "opacity-50 cursor-not-allowed" : ""}`}
+          } ${
+            isDisabled && !isWaitingForResponse
+              ? "opacity-50 cursor-not-allowed"
+              : ""
+          }`}
           onClick={() => {
             if (isWaitingForResponse) {
               onStopResponse();
@@ -737,7 +746,9 @@ export default function Home() {
                   } else {
                     setMessages((prev) =>
                       prev.map((m) =>
-                        m.id === agentMessageId ? { ...m, text: messageText } : m
+                        m.id === agentMessageId
+                          ? { ...m, text: messageText }
+                          : m
                       )
                     );
                   }
@@ -756,7 +767,8 @@ export default function Home() {
                   setMessages((prev) => [...prev, funcCall]);
                 } else if (data.type === "functionResult") {
                   if (functionCalls.length > 0) {
-                    const lastFuncCall = functionCalls[functionCalls.length - 1];
+                    const lastFuncCall =
+                      functionCalls[functionCalls.length - 1];
                     lastFuncCall.functionResult = data.data;
 
                     setMessages((prev) =>
