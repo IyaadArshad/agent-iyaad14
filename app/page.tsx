@@ -481,6 +481,7 @@ export default function Home() {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
   const [isTyping, setIsTyping] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const [welcomeOpacity, setWelcomeOpacity] = useState(1);
@@ -493,11 +494,19 @@ export default function Home() {
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
 
+  // Effect to scroll to bottom whenever messages change
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer) {
+      // Use setTimeout to ensure scrolling happens after DOM update and rendering
+      setTimeout(() => {
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollHeight,
+          behavior: "smooth",
+        });
+      }, 0);
     }
-  }, [messages]);
+  }, [messages]); // Trigger effect when messages array changes
 
   // Function to handle file uploads
   const uploadFiles = async (files: FileList): Promise<void> => {
@@ -619,118 +628,120 @@ export default function Home() {
           buffer += text;
 
           // Process complete events in the buffer
-          const events = buffer.split("\n\n");
-          buffer = events.pop() || ""; // Keep the last incomplete event in the buffer
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const eventString = buffer.substring(0, boundary);
+            buffer = buffer.substring(boundary + 2); // Skip the '\n\n'
 
-          for (const event of events) {
-            if (!event.trim() || !event.startsWith("data: ")) continue;
+            if (eventString.startsWith("data: ")) {
+              const eventData = eventString.substring(6); // Skip "data: "
+              try {
+                const data = JSON.parse(eventData);
 
-            try {
-              const jsonStr = event.replace(/^data: /, "");
-              const data = JSON.parse(jsonStr);
-
-              if (data.type === "message") {
-                let messageText = "";
-                if (typeof data.content === "string") {
-                  messageText = data.content;
-                } else if (
-                  typeof data.content === "object" &&
-                  data.content !== null &&
-                  "value" in data.content &&
-                  typeof data.content.value === "string"
-                ) {
-                  console.warn(
-                    "Received message content as object, extracting value:",
-                    data.content
-                  );
-                  messageText = data.content.value;
-                } else {
-                  console.warn(
-                    "Received unexpected message content type, attempting to stringify:",
-                    data.content
-                  );
-                  try {
-                    messageText = String(data.content);
-                  } catch {
-                    messageText = "[Unsupported message content]";
+                if (data.type === "message") {
+                  let messageText = "";
+                  if (typeof data.content === "string") {
+                    messageText = data.content;
+                  } else if (
+                    typeof data.content === "object" &&
+                    data.content !== null &&
+                    "value" in data.content &&
+                    typeof data.content.value === "string"
+                  ) {
+                    console.warn(
+                      "Received message content as object, extracting value:",
+                      data.content
+                    );
+                    messageText = data.content.value;
+                  } else {
+                    console.warn(
+                      "Received unexpected message content type, attempting to stringify:",
+                      data.content
+                    );
+                    try {
+                      messageText = String(data.content);
+                    } catch {
+                      messageText = "[Unsupported message content]";
+                    }
                   }
-                }
 
-                if (isTyping) {
-                  setIsTyping(false);
-                }
+                  if (isTyping) {
+                    setIsTyping(false);
+                  }
 
-                responseText = messageText;
+                  responseText = messageText;
 
-                if (!agentMessageAdded) {
+                  if (!agentMessageAdded) {
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        id: agentMessageId,
+                        text: messageText,
+                        sender: "agent",
+                      },
+                    ]);
+                    agentMessageAdded = true;
+                  } else {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === agentMessageId ? { ...m, text: messageText } : m
+                      )
+                    );
+                  }
+                } else if (data.type === "function") {
+                  if (isTyping) {
+                    setIsTyping(false);
+                  }
+                  const funcCall: MessageType = {
+                    id: "func-" + Date.now().toString(),
+                    text: `Calling function: ${data.data}`,
+                    sender: "function",
+                    functionName: data.data,
+                    functionParams: data.parameters,
+                  };
+                  functionCalls.push(funcCall);
+                  setMessages((prev) => [...prev, funcCall]);
+                } else if (data.type === "functionResult") {
+                  if (functionCalls.length > 0) {
+                    const lastFuncCall = functionCalls[functionCalls.length - 1];
+                    lastFuncCall.functionResult = data.data;
+
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === lastFuncCall.id
+                          ? { ...m, functionResult: data.data }
+                          : m
+                      )
+                    );
+                  }
+                } else if (data.type === "error") {
+                  console.error("API Error:", data.message);
+                  if (isTyping) {
+                    setIsTyping(false);
+                  }
                   setMessages((prev) => [
                     ...prev,
                     {
-                      id: agentMessageId,
-                      text: messageText,
+                      id: "error-" + Date.now().toString(),
+                      text: `Error: ${data.message}`,
                       sender: "agent",
                     },
                   ]);
-                  agentMessageAdded = true;
-                } else {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === agentMessageId ? { ...m, text: messageText } : m
-                    )
-                  );
+                } else if (data.type === "end") {
+                  setIsWaitingForResponse(false);
+                  if (isTyping) {
+                    setIsTyping(false);
+                  }
+                  setShowSpinner(false);
                 }
-              } else if (data.type === "function") {
+              } catch (error) {
+                console.error("Error parsing event:", error, eventString); // Log the problematic string
                 if (isTyping) {
                   setIsTyping(false);
                 }
-                const funcCall: MessageType = {
-                  id: "func-" + Date.now().toString(),
-                  text: `Calling function: ${data.data}`,
-                  sender: "function",
-                  functionName: data.data,
-                  functionParams: data.parameters,
-                };
-                functionCalls.push(funcCall);
-                setMessages((prev) => [...prev, funcCall]);
-              } else if (data.type === "functionResult") {
-                if (functionCalls.length > 0) {
-                  const lastFuncCall = functionCalls[functionCalls.length - 1];
-                  lastFuncCall.functionResult = data.data;
-
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === lastFuncCall.id
-                        ? { ...m, functionResult: data.data }
-                        : m
-                    )
-                  );
-                }
-              } else if (data.type === "error") {
-                console.error("API Error:", data.message);
-                if (isTyping) {
-                  setIsTyping(false);
-                }
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: "error-" + Date.now().toString(),
-                    text: `Error: ${data.message}`,
-                    sender: "agent",
-                  },
-                ]);
-              } else if (data.type === "end") {
-                setIsWaitingForResponse(false);
-                if (isTyping) {
-                  setIsTyping(false);
-                }
-                setShowSpinner(false);
-              }
-            } catch (error) {
-              console.error("Error parsing event:", error, event);
-              if (isTyping) {
-                setIsTyping(false);
               }
             }
+            boundary = buffer.indexOf("\n\n");
           }
         }
         setShowSpinner(false);
@@ -834,7 +845,10 @@ export default function Home() {
             }}
           >
             <div className="flex-grow relative overflow-hidden flex flex-col">
-              <div className="absolute inset-0 overflow-y-auto pb-40">
+              <div
+                ref={scrollContainerRef}
+                className="absolute inset-0 overflow-y-auto pb-40"
+              >
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   <div className="flex flex-col gap-6 mb-8">
@@ -856,7 +870,7 @@ export default function Home() {
                         return (
                           <div
                             key={msg.id}
-                            className={`flex justify-start w-full ${
+                            className={`agent-message-container flex justify-start w-full ${
                               index === 0 ? "-mt-4" : ""
                             }`}
                           >

@@ -245,6 +245,19 @@
   to { opacity: 0; }
 }
 
+/* Add animation for elements */
+.animate-element {
+  opacity: 0;
+  /* Faster animation for the container element */
+  animation: fadeInElement 0.15s ease-out forwards;
+}
+
+@keyframes fadeInElement {
+  to {
+    opacity: 1;
+  }
+}
+
 /* Commented out old/conflicting animation definitions */
  /*
 .fade-word {

@@ -18,7 +18,7 @@ const AnimatedText = ({ children, wordIndexOffset }: { children: React.ReactNode
           // Preserve whitespace without animation
           return <Fragment key={index}>{word}</Fragment>;
         }
-        // Faster animation between elements: Reduce delay multiplier further
+        // Use the faster 12ms delay factor for words
         const delay = wordIndexOffset.current * 12; // Stagger delay (faster)
         wordIndexOffset.current += 1;
         return (
@@ -52,17 +52,25 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({ content })
   }, [content]);
 
   // Factory function to create animated components for standard HTML tags
-  // Use ElementType for broader compatibility
   const createAnimatedComponent = <T extends ElementType>(
     elementType: T
   ): React.FC<ComponentPropsWithoutRef<T>> => {
     const AnimatedComponent: React.FC<ComponentPropsWithoutRef<T>> = (props) => {
-      // Explicitly type props to include children
       const { children, ...restProps } = props as { children?: React.ReactNode } & Omit<ComponentPropsWithoutRef<T>, 'children'>;
       const Element = elementType;
+
+      // Calculate delay for the element itself based on the *current* counter value
+      // This makes the element fade-in start concurrently with its first word's potential start time
+      const elementDelay = wordIndexCounter.current * 12; // Use the same delay factor as words
+
       return (
-        // Cast Element to 'any' to bypass complex JSX type checking with generics
-        <Element {...restProps as any}>
+        // Apply element animation class and delay
+        <Element
+          {...restProps as any}
+          className="animate-element" // Add class for element fade-in
+          style={{ animationDelay: `${elementDelay}ms` }} // Apply calculated delay
+        >
+          {/* AnimatedText uses the same counter ref, words will animate sequentially after element starts */}
           <AnimatedText wordIndexOffset={wordIndexCounter}>{children}</AnimatedText>
         </Element>
       );
@@ -76,7 +84,7 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({ content })
   // Custom renderers for text-containing elements using the factory
   const components: Partial<Components> = {
     p: createAnimatedComponent('p'),
-    li: createAnimatedComponent('li'),
+    li: createAnimatedComponent('li'), // Apply to list items as well
     h1: createAnimatedComponent('h1'),
     h2: createAnimatedComponent('h2'),
     h3: createAnimatedComponent('h3'),
@@ -86,25 +94,30 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({ content })
     // Handle inline code with animation - use specific props type
     code: ({ node, inline, className, children, style, ...props }: any) => {
       if (inline) {
+        // Inline code is treated like a word within its parent element
         return (
           <code className={className} style={style} {...props}>
             <AnimatedText wordIndexOffset={wordIndexCounter}>{children}</AnimatedText>
           </code>
         );
       }
-      // Block code - render without word animation
+      // Block code - render without word animation, but apply element animation
+      // We need to wrap the <pre> element using the factory if we want it to fade in
       return (
         <code className={className} style={style} {...props}>
           {children}
         </code>
       );
     },
-    pre: ({ node, children, ...props }: any) => {
-        return <pre {...props}>{children}</pre>;
-    },
+    // Apply element animation to <pre> blocks
+    pre: createAnimatedComponent('pre'),
     blockquote: createAnimatedComponent('blockquote'),
+    // Apply element animation to table cells
     td: createAnimatedComponent('td'),
     th: createAnimatedComponent('th'),
+    // Note: Applying to table rows (tr) or the table itself might be better visually
+    // tr: createAnimatedComponent('tr'),
+    // table: createAnimatedComponent('table'), // Could animate whole table at once
   };
 
   return (
