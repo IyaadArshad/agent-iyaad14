@@ -32,7 +32,6 @@ interface InputBoxProps {
   };
   toggleMode?: (mode: "search" | "reason" | "jdi") => void;
   className?: string;
-  isDisabled?: boolean;
   isWaitingForResponse?: boolean;
   uploadFiles?: (files: FileList) => Promise<void>;
 }
@@ -47,7 +46,6 @@ function InputBox({
   modes = { search: false, reason: false, jdi: false },
   toggleMode = () => {},
   className = "",
-  isDisabled = false,
   isWaitingForResponse = false,
   uploadFiles = async () => {},
 }: InputBoxProps) {
@@ -83,7 +81,7 @@ function InputBox({
       setInputValue((prev: string) => prev + "\n");
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputValue.trim() && !isDisabled) {
+      if (inputValue.trim()) {
         onSendMessage(inputValue);
       }
     } else if (e.key === "Backspace" && inputValue.endsWith("\n")) {
@@ -93,7 +91,6 @@ function InputBox({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (isDisabled) return;
     e.preventDefault();
     setIsDragging(true);
   };
@@ -103,7 +100,6 @@ function InputBox({
   };
 
   const handleDrop = async (e: React.DragEvent) => {
-    if (isDisabled) return;
     e.preventDefault();
     setIsDragging(false);
 
@@ -143,9 +139,7 @@ function InputBox({
           isDragging ? "bg-blue-50 border-dashed" : ""
         } border border-gray-300 ${
           showBottomSection ? "rounded-2xl" : "rounded-full"
-        } hover:border-[#1A479D] focus-within:border-[#1A479D] focus-within:ring-[#1A479D] transition-all duration-200 ${
-          isDisabled ? "opacity-70 cursor-not-allowed" : ""
-        }`}
+        } hover:border-[#1A479D] focus-within:border-[#1A479D] focus-within:ring-[#1A479D] transition-all duration-200 ${""}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -158,30 +152,24 @@ function InputBox({
           placeholder={isDragging ? "Drop files here..." : placeholder}
           className={`w-full p-4 border-0 focus:outline-none resize-none overflow-hidden min-h-[56px] max-h-[200px] ${
             showBottomSection ? "rounded-t-2xl" : "rounded-full"
-          } ${isDisabled ? "bg-gray-100 cursor-not-allowed" : ""}`}
+          }`}
           rows={1}
           style={{
             paddingRight: "3rem",
             lineHeight: "1.5",
           }}
-          disabled={isDisabled}
         />
         <button
           className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
             isMultiline ? "top-4" : "top-[28px] transform -translate-y-1/2"
-          } ${
-            isDisabled && !isWaitingForResponse
-              ? "opacity-50 cursor-not-allowed"
-              : ""
           }`}
           onClick={() => {
             if (isWaitingForResponse) {
               onStopResponse();
-            } else if (inputValue.trim() && !isDisabled) {
+            } else if (inputValue.trim()) {
               onSendMessage(inputValue);
             }
           }}
-          disabled={isDisabled && !isWaitingForResponse}
         >
           {isWaitingForResponse ? (
             <SquareIcon className="w-5 h-5" />
@@ -211,12 +199,8 @@ function InputBox({
             <div className="flex items-center px-4 py-2 bg-gray-50 rounded-b-2xl justify-between">
               <button
                 type="button"
-                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative ${
-                  isDisabled ? "opacity-50 cursor-not-allowed" : ""
-                }`}
+                className={`flex items-center gap-1.5 p-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-100 hover:cursor-pointer transition-all text-gray-600 relative`}
                 onClick={async () => {
-                  if (isDisabled) return;
-
                   setIconState("loading");
 
                   // Create and set up a timer to reset icon state if dialog is canceled
@@ -248,7 +232,6 @@ function InputBox({
                     });
                   }
                 }}
-                disabled={iconState !== "idle" || isDisabled}
               >
                 <span
                   className={`transition-opacity duration-200 absolute left-2 ${
@@ -396,9 +379,8 @@ function InputBox({
                           modes.search
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                        onClick={() => !isDisabled && toggleMode("search")}
-                        disabled={isDisabled}
+                        }`}
+                        onClick={() => toggleMode("search")}
                       >
                         <SearchIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Search</span>
@@ -421,9 +403,8 @@ function InputBox({
                           modes.reason
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                        onClick={() => !isDisabled && toggleMode("reason")}
-                        disabled={isDisabled}
+                        }`}
+                        onClick={() => toggleMode("reason")}
                       >
                         <BrainCircuitIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Reason</span>
@@ -446,9 +427,8 @@ function InputBox({
                           modes.jdi
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600 hover:bg-gray-200"
-                        } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                        onClick={() => !isDisabled && toggleMode("jdi")}
-                        disabled={isDisabled}
+                        }`}
+                        onClick={() => toggleMode("jdi")}
                       >
                         <ZapIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">JDI Mode</span>
@@ -908,7 +888,6 @@ export default function Home() {
                   onStopResponse={stopResponse}
                   placeholder="Type something great here or drop files..."
                   showBottomSection={false}
-                  isDisabled={isWaitingForResponse}
                   isWaitingForResponse={isWaitingForResponse}
                   uploadFiles={uploadFiles}
                 />
@@ -1028,7 +1007,6 @@ export default function Home() {
                       showBottomSection={true}
                       modes={modes}
                       toggleMode={toggleMode}
-                      isDisabled={isWaitingForResponse}
                       isWaitingForResponse={isWaitingForResponse}
                       uploadFiles={uploadFiles}
                     />
