@@ -484,7 +484,7 @@ function InputBox({
                         onClick={() => toggleMode("lite")}
                       >
                         <ZapIcon height={14} width={14} />
-                        <span className="text-xs">Lite Mode</span>
+                        <span className="text-xs">Lite</span>
                       </button>
                     </TooltipTrigger>
                     <TooltipContent
