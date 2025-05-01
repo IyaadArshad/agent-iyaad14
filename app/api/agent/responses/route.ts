@@ -22,6 +22,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { registerRequest, removeRequest, shouldCancelRequest } from "../stop/route";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -170,7 +171,13 @@ async function read_file(file_name: string) {
 }
 
 export async function POST(request: NextRequest) {
+  // Generate a unique request ID for this conversation
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  
   try {
+    // Register this request as active
+    registerRequest(requestId);
+    
     const body = await request.json();
     const { messages, jdiMode = false, uploadedFileIds = [] } = body;
 
@@ -339,30 +346,33 @@ export async function POST(request: NextRequest) {
             top_p: 1,
           };
 
-          // No need to add a separate retrieval tool since we already have a file_search tool
-          // in the functionTools array with the proper configuration:
-          // {
-          //     type: "file_search",
-          //     vector_store_ids: [VECTOR_STORE_ID],
-          //     max_num_results: 20
-          // }
-          // The error occurred because 'retrieval' is not a valid tool type
-          // Valid types are: 'function', 'file_search', 'web_search_preview',
-          // 'web_search_preview_2025_03_11', and 'computer_use_preview'
+          // Check if request should be canceled before calling OpenAI
+          if (shouldCancelRequest(requestId)) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({
+                  type: "message",
+                  content: "*Response canceled before processing*",
+                })}\n\n`
+              )
+            );
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: "end" })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
 
           // Call OpenAI responses API with the correctly structured request
           const response = await openai.responses.create(requestObj);
 
-          // Parse and stream response
-          console.log(
-            "OpenAI Raw Response:",
-            JSON.stringify(response, null, 2)
-          );
-
           let messageContentToSend: string | null = null;
-          let messageSent = false; // Flag to track if a message chunk was sent
-          let hasToolCalls = false; // Flag to track if tool calls were processed
+          let messageSent = false; 
+          let hasToolCalls = false; 
 
+          // Process response content
           // First, check for output_text at the root level (for backward compatibility)
           if (
             typeof response.output_text === "string" &&
@@ -732,6 +742,25 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          // First, check if the request was canceled during processing
+          if (shouldCancelRequest(requestId)) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({
+                  type: "message",
+                  content: "*Response canceled during processing*",
+                })}\n\n`
+              )
+            );
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: "end" })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
+
           // Last resort: check for text at the root level if we haven't sent anything yet
           if (!messageSent && !hasToolCalls && "text" in response) {
             console.log(
@@ -794,6 +823,9 @@ export async function POST(request: NextRequest) {
             )
           );
           controller.close();
+        } finally {
+          // Always remove the request ID when done
+          removeRequest(requestId);
         }
       },
     });
@@ -807,6 +839,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error in POST handler:", error);
+    // Always remove the request ID in case of error
+    removeRequest(requestId);
+    
     return NextResponse.json(
       {
         success: false,

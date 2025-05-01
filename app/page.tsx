@@ -10,13 +10,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { SearchIcon, BrainCircuitIcon, ZapIcon } from "lucide-react";
+import { SearchIcon, BrainCircuitIcon, ZapIcon, SquareIcon } from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 
 interface InputBoxProps {
   inputValue: string;
   setInputValue: React.Dispatch<React.SetStateAction<string>>;
   onSendMessage: (msg: string) => void;
+  onStopResponse?: () => void;
   placeholder?: string;
   showBottomSection?: boolean;
   modes?: {
@@ -27,6 +28,7 @@ interface InputBoxProps {
   toggleMode?: (mode: "search" | "reason" | "jdi") => void;
   className?: string;
   isDisabled?: boolean;
+  isWaitingForResponse?: boolean;
   uploadFiles?: (files: FileList) => Promise<void>;
 }
 
@@ -34,12 +36,14 @@ function InputBox({
   inputValue,
   setInputValue,
   onSendMessage,
+  onStopResponse = () => {},
   placeholder = "Type something great here or drop files...",
   showBottomSection = false,
   modes = { search: false, reason: false, jdi: false },
   toggleMode = () => {},
   className = "",
   isDisabled = false,
+  isWaitingForResponse = false,
   uploadFiles = async () => {},
 }: InputBoxProps) {
   const [isMultiline, setIsMultiline] = useState(false);
@@ -160,29 +164,35 @@ function InputBox({
         <button
           className={`absolute right-3 hover:cursor-pointer text-gray-400 hover:text-[#1A479D] transition-all duration-200 ${
             isMultiline ? "top-4" : "top-[28px] transform -translate-y-1/2"
-          } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          } ${isDisabled && !isWaitingForResponse ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
-            if (inputValue.trim() && !isDisabled) {
+            if (isWaitingForResponse) {
+              onStopResponse();
+            } else if (inputValue.trim() && !isDisabled) {
               onSendMessage(inputValue);
             }
           }}
-          disabled={isDisabled}
+          disabled={isDisabled && !isWaitingForResponse}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="lucide lucide-send"
-          >
-            <path d="m22 2-7 20-4-9-9-4Z" />
-            <path d="M22 2 11 13" />
-          </svg>
+          {isWaitingForResponse ? (
+            <SquareIcon className="w-5 h-5" />
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="lucide lucide-send"
+            >
+              <path d="m22 2-7 20-4-9-9-4Z" />
+              <path d="M22 2 11 13" />
+            </svg>
+          )}
         </button>
 
         {showBottomSection && (
@@ -492,7 +502,9 @@ export default function Home() {
     jdi: false,
   });
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
+  const currentResponseController = useRef<AbortController | null>(null);
 
   // Effect to scroll to bottom whenever messages change
   useEffect(() => {
@@ -548,6 +560,42 @@ export default function Home() {
     }
   };
 
+  const stopResponse = async () => {
+    if (!isWaitingForResponse || isStopping) return;
+
+    setIsStopping(true);
+
+    try {
+      if (currentResponseController.current) {
+        currentResponseController.current.abort();
+      }
+
+      // Send a stop request to the server
+      await fetch("/api/agent/stop", {
+        method: "POST",
+      });
+
+      // Clean up UI state
+      setIsWaitingForResponse(false);
+      setIsTyping(false);
+      setShowSpinner(false);
+
+      // Add a message showing the response was stopped
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          text: "*Response stopped by user*",
+          sender: "agent",
+        },
+      ]);
+    } catch (error) {
+      console.error("Error stopping response:", error);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
   const sendMessage = async (msg: string) => {
     if (!msg.trim() || isWaitingForResponse) return;
 
@@ -587,6 +635,10 @@ export default function Home() {
       .filter(Boolean); // Remove nulls
 
     try {
+      // Create an AbortController for this request
+      currentResponseController.current = new AbortController();
+      const signal = currentResponseController.current.signal;
+
       // Call the agent API with streaming response handling
       const response = await fetch("/api/agent/responses", {
         method: "POST",
@@ -596,6 +648,7 @@ export default function Home() {
           jdiMode: modes.jdi,
           uploadedFileIds: uploadedFileIds.length > 0 ? uploadedFileIds : [],
         }),
+        signal,
       });
 
       if (!response.ok) {
@@ -748,6 +801,12 @@ export default function Home() {
       };
 
       processEvents().catch((error) => {
+        // Don't show error if it was due to an abort
+        if (error.name === "AbortError") {
+          console.log("Request was aborted");
+          return;
+        }
+
         console.error("Error processing stream:", error);
         setIsTyping(false);
         setShowSpinner(false);
@@ -764,6 +823,12 @@ export default function Home() {
         ]);
       });
     } catch (error) {
+      // Don't show error if it was due to an abort
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Request was aborted");
+        return;
+      }
+
       console.error("Error calling API:", error);
       setIsTyping(false);
       setShowSpinner(false);
@@ -828,9 +893,11 @@ export default function Home() {
                   inputValue={inputValue}
                   setInputValue={setInputValue}
                   onSendMessage={sendMessage}
+                  onStopResponse={stopResponse}
                   placeholder="Type something great here or drop files..."
                   showBottomSection={false}
                   isDisabled={isWaitingForResponse}
+                  isWaitingForResponse={isWaitingForResponse}
                   uploadFiles={uploadFiles}
                 />
               </div>
@@ -944,11 +1011,13 @@ export default function Home() {
                       inputValue={inputValue}
                       setInputValue={setInputValue}
                       onSendMessage={sendMessage}
+                      onStopResponse={stopResponse}
                       placeholder="Type your next message here or drop files..."
                       showBottomSection={true}
                       modes={modes}
                       toggleMode={toggleMode}
                       isDisabled={isWaitingForResponse}
+                      isWaitingForResponse={isWaitingForResponse}
                       uploadFiles={uploadFiles}
                     />
                   </div>
