@@ -25,13 +25,30 @@ import {
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 import MessageActionButtons from "@/components/MessageActionButtons";
 
+// Define message type including function calls and results
+type MessageType = {
+  id: string;
+  text: string;
+  sender: "user" | "agent" | "function";
+  functionName?: string;
+  functionParams?: any;
+  functionResult?: any;
+};
+
 // Extract Message component to prevent re-renders when input changes
+interface MessageItemProps {
+  msg: MessageType;
+  index: number;
+  isWaitingForResponse: boolean;
+  isLastMessage: boolean;
+}
+
 const MessageItem = memo(({ 
   msg, 
   index, 
   isWaitingForResponse, 
   isLastMessage 
-}) => {
+}: MessageItemProps) => {
   if (msg.sender === "user") {
     return (
       <div
@@ -628,16 +645,6 @@ function InputBox({
     </div>
   );
 }
-
-// Define message type including function calls and results
-type MessageType = {
-  id: string;
-  text: string;
-  sender: "user" | "agent" | "function";
-  functionName?: string;
-  functionParams?: any;
-  functionResult?: any;
-};
 
 export default function Home() {
   const conversationHistory = [
