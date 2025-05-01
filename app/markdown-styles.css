@@ -46,7 +46,8 @@
     list-style-type: disc;
     margin-top: 0.5em;
     margin-bottom: 1em;
-    padding-left: 1.5em;
+    /* Increased padding for more space */
+    padding-left: 1.75em; 
 }
 
 .prose ol {
@@ -63,8 +64,23 @@
 
 .prose li::marker {
     color: #6b7280;
-    /* gray-500 */
     font-weight: 400;
+    font-size: 1.2em; 
+}
+
+.prose ul li {
+  margin-top: 0em;
+  margin-bottom: 0em;
+}
+
+.prose ul li::marker {
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 1.4em; 
+}
+
+.prose ul li.animate-element {
+  padding-left: 8px!important;
 }
 
 .prose ul>li::marker {
