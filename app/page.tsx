@@ -539,15 +539,17 @@ function InputBox({
                     <TooltipTrigger asChild>
                       <button
                         className={`p-1.5 rounded-md ${
-                          modes.lite
+                          modes.lite || modes.reason // Disable search if lite or reason is on
                             ? "opacity-50 cursor-not-allowed"
                             : "hover:cursor-pointer hover:bg-gray-200"
                         } transition-all flex items-center gap-1 ${
-                          modes.search && !modes.lite
+                          modes.search && !modes.lite && !modes.reason // Only show active if search is on AND lite/reason are off
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600"
                         }`}
-                        onClick={() => !modes.lite && toggleMode("search")}
+                        onClick={() =>
+                          !modes.lite && !modes.reason && toggleMode("search") // Prevent click if lite or reason is on
+                        }
                       >
                         <SearchIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Search</span>
@@ -560,6 +562,8 @@ function InputBox({
                       <p>
                         {modes.lite
                           ? "Search is disabled in lite mode"
+                          : modes.reason
+                          ? "Search is disabled when reason mode is active"
                           : "Enables web search capabilities"}
                       </p>
                     </TooltipContent>
@@ -803,21 +807,25 @@ export default function Home() {
         ? "/api/agent/lite/responses"
         : "/api/agent/responses";
 
+      // Prepare the request body
+      const requestBody: any = {
+        messages: conversationMessages,
+        jdiMode: modes.jdi,
+      };
+
+      // Add reason and search modes if not in lite mode
+      if (!modes.lite) {
+        requestBody.reason = modes.reason;
+        requestBody.search = modes.search;
+        requestBody.uploadedFileIds =
+          uploadedFileIds.length > 0 ? uploadedFileIds : [];
+      }
+
       // Call the appropriate agent API with streaming response handling
       const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: conversationMessages,
-          jdiMode: modes.jdi,
-          // Only include uploadedFileIds when not in lite mode
-          ...(modes.lite
-            ? {}
-            : {
-                uploadedFileIds:
-                  uploadedFileIds.length > 0 ? uploadedFileIds : [],
-              }),
-        }),
+        body: JSON.stringify(requestBody), // Use the prepared request body
         signal,
       });
 
@@ -1022,27 +1030,38 @@ export default function Home() {
   };
 
   const toggleMode = (mode: "search" | "reason" | "jdi" | "lite") => {
-    if (mode === "lite") {
-      // When toggling lite mode, disable search and reason if enabling lite
-      setModes((prev) => {
-        const newLiteState = !prev.lite;
-        return {
-          search: newLiteState ? false : prev.search,
-          reason: newLiteState ? false : prev.reason,
-          jdi: prev.jdi,
-          lite: newLiteState,
-        };
-      });
-    } else if (modes.lite && (mode === "search" || mode === "reason")) {
-      // If in lite mode, don't allow enabling search or reason
-      return;
-    } else {
-      // Standard toggle for other modes
-      setModes((prev) => ({
-        ...prev,
-        [mode]: !prev[mode],
-      }));
-    }
+    setModes((prev) => {
+      const newState = { ...prev };
+
+      if (mode === "lite") {
+        // Toggle lite mode
+        newState.lite = !prev.lite;
+        // If lite is turned on, turn off search and reason
+        if (newState.lite) {
+          newState.search = false;
+          newState.reason = false;
+        }
+      } else if (mode === "reason") {
+        // Toggle reason mode (only if not in lite mode)
+        if (!prev.lite) {
+          newState.reason = !prev.reason;
+          // If reason is turned on, turn off search
+          if (newState.reason) {
+            newState.search = false;
+          }
+        }
+      } else if (mode === "search") {
+        // Toggle search mode (only if not in lite mode AND reason is off)
+        if (!prev.lite && !prev.reason) {
+          newState.search = !prev.search;
+        }
+      } else if (mode === "jdi") {
+        // Toggle JDI mode (no dependencies)
+        newState.jdi = !prev.jdi;
+      }
+
+      return newState;
+    });
   };
 
   return (

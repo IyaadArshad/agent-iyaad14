@@ -19,14 +19,14 @@
  *
  * It is a POST request with streaming blocks output
  */
-
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import {
+  activeRequestIds,
   registerRequest,
   removeRequest,
   shouldCancelRequest,
-} from "../stop/route";
+} from "../../../../lib/activeRequests"; // Import from the new utility file
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -185,7 +185,13 @@ export async function POST(request: NextRequest) {
     registerRequest(requestId);
 
     const body = await request.json();
-    const { messages, jdiMode = false, uploadedFileIds = [] } = body;
+    const {
+      messages,
+      jdiMode = false,
+      reason = false, // Add reason mode
+      search = false, // Add search mode
+      uploadedFileIds = [],
+    } = body;
 
     // Validate required parameters
     if (!messages || !Array.isArray(messages)) {
@@ -207,6 +213,8 @@ export async function POST(request: NextRequest) {
     console.log("Agent Iyaad14 API Request:", {
       messagesCount: messages.length,
       jdiMode,
+      reason, // Log reason mode
+      search, // Log search mode
       hasUploadedFiles: uploadedFileIds.length > 0,
     });
 
@@ -220,6 +228,103 @@ export async function POST(request: NextRequest) {
     if (jdiMode) {
       systemPrompt +=
         "\n\n# JDI MODE ACTIVATED\nYou are in Just Do It (JDI) mode. Your approach should be highly proactive and action-oriented. Rather than asking questions, make immediate assumptions and take direct actions. If the user mentions a feature or screen, immediately create the necessary files and implement the content without seeking further clarification. Act decisively and autonomously based on the information available. If provided with meeting notes, use them to create comprehensive BRS documents immediately with minimal interaction. Speed and efficiency are paramount in JDI mode.";
+    }
+
+    // Define base function tools
+    const functionTools: any[] = [
+      {
+        type: "function",
+        name: "create_file",
+        strict: true,
+        parameters: {
+          type: "object",
+          required: ["filename"],
+          properties: {
+            filename: {
+              type: "string",
+              description:
+                "The name of the file, must be a valid name ending in .md and only include a-z, A-Z, dashes or numbers. No underscores",
+            },
+          },
+          additionalProperties: false,
+        },
+        description:
+          "Creates a brs file, must end in .md, only a-z, A-Z, dashes too, but no underscores and all numbers, nothing else",
+      },
+      {
+        type: "function",
+        name: "write_initial_data",
+        strict: true,
+        parameters: {
+          type: "object",
+          required: ["brs_file_name", "user_inputs"],
+          properties: {
+            user_inputs: {
+              type: "string",
+              description:
+                "Array of user-provided inputs relevant for writing the BRS content",
+            },
+            brs_file_name: {
+              type: "string",
+              description: "The name of the BRS file to write to",
+            },
+          },
+          additionalProperties: false,
+        },
+        description:
+          "Writes the initial content for the first version of a BRS file, using relevant user inputs.",
+      },
+      {
+        type: "function",
+        name: "implement_edits",
+        description:
+          "Applies user inputs to the specified BRS file to make changes and edit the file",
+        parameters: {
+          type: "object",
+          required: ["user_inputs", "file_name"],
+          properties: {
+            user_inputs: {
+              type: "string",
+              description:
+                "The users requests and what the user has asked for. If there are any meeting notes at all, provide the metting notes in full over here in addition to the users inputs without changing anything",
+            },
+            file_name: {
+              type: "string",
+              description: "The name of the BRS file to be edited",
+            },
+          },
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+      {
+        type: "function",
+        name: "read_file",
+        description:
+          "Reads the specified brs file before processing any user requests related to the file. This function allows you to get the inputs of the BRS file",
+        parameters: {
+          type: "object",
+          required: ["file_name"],
+          properties: {
+            file_name: {
+              type: "string",
+              description: "The name of the brs file to read",
+            },
+          },
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+      {
+        type: "file_search",
+        vector_store_ids: [VECTOR_STORE_ID],
+        max_num_results: 20,
+      },
+    ];
+
+    // Add web search tool if search mode is enabled
+    if (search) {
+      functionTools.push({ type: "web_search_preview" });
     }
 
     // Create a new streaming response
@@ -238,103 +343,16 @@ export async function POST(request: NextRequest) {
           sendLog({
             message: "Starting OpenAI request",
             count: messages.length,
+            modes: { jdiMode, reason, search }, // Log modes
           });
 
-          // Set up function tools array
-          const functionTools = [
-            {
-              type: "function",
-              name: "create_file",
-              strict: true,
-              parameters: {
-                type: "object",
-                required: ["filename"],
-                properties: {
-                  filename: {
-                    type: "string",
-                    description:
-                      "The name of the file, must be a valid name ending in .md and only include a-z, A-Z, dashes or numbers. No underscores",
-                  },
-                },
-                additionalProperties: false,
-              },
-              description:
-                "Creates a brs file, must end in .md, only a-z, A-Z, dashes too, but no underscores and all numbers, nothing else",
-            },
-            {
-              type: "function",
-              name: "write_initial_data",
-              strict: true,
-              parameters: {
-                type: "object",
-                required: ["brs_file_name", "user_inputs"],
-                properties: {
-                  user_inputs: {
-                    type: "string",
-                    description:
-                      "Array of user-provided inputs relevant for writing the BRS content",
-                  },
-                  brs_file_name: {
-                    type: "string",
-                    description: "The name of the BRS file to write to",
-                  },
-                },
-                additionalProperties: false,
-              },
-              description:
-                "Writes the initial content for the first version of a BRS file, using relevant user inputs.",
-            },
-            {
-              type: "function",
-              name: "implement_edits",
-              description:
-                "Applies user inputs to the specified BRS file to make changes and edit the file",
-              parameters: {
-                type: "object",
-                required: ["user_inputs", "file_name"],
-                properties: {
-                  user_inputs: {
-                    type: "string",
-                    description:
-                      "The users requests and what the user has asked for. If there are any meeting notes at all, provide the metting notes in full over here in addition to the users inputs without changing anything",
-                  },
-                  file_name: {
-                    type: "string",
-                    description: "The name of the BRS file to be edited",
-                  },
-                },
-                additionalProperties: false,
-              },
-              strict: true,
-            },
-            {
-              type: "function",
-              name: "read_file",
-              description:
-                "Reads the specified brs file before processing any user requests related to the file. This function allows you to get the inputs of the BRS file",
-              parameters: {
-                type: "object",
-                required: ["file_name"],
-                properties: {
-                  file_name: {
-                    type: "string",
-                    description: "The name of the brs file to read",
-                  },
-                },
-                additionalProperties: false,
-              },
-              strict: true,
-            },
-            {
-              type: "file_search",
-              vector_store_ids: [VECTOR_STORE_ID],
-              max_num_results: 20,
-            },
-          ];
+          // Determine the model based on reason mode
+          const modelToUse = reason ? "o4-mini" : "gpt-4.1";
+          sendLog({ message: `Using model: ${modelToUse}` });
 
           // Create a request object for the OpenAI API
           const requestObj: any = {
-            model: "gpt-4.1",
+            model: modelToUse, // Use determined model
             input: [
               {
                 role: "system",
@@ -346,11 +364,17 @@ export async function POST(request: NextRequest) {
                 content: msg.content,
               })),
             ],
-            tools: functionTools,
+            tools: functionTools, // Use the potentially modified tools array
             temperature: 1,
             max_output_tokens: 2048,
             top_p: 1,
           };
+
+          // Add reasoning_effort if reason mode is enabled
+          if (reason) {
+            requestObj.reasoning.effort = "high";
+            sendLog({ message: "Adding reasoning_effort: high" });
+          }
 
           // Check if request should be canceled before calling OpenAI
           if (shouldCancelRequest(requestId)) {

@@ -1,24 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Keep track of current OpenAI request IDs that need to be canceled
-// This is a simple in-memory store - for production you might want
-// to use a more persistent solution
-const activeRequestIds: Set<string> = new Set();
-
-// Register an active request ID
-export function registerRequest(requestId: string) {
-  activeRequestIds.add(requestId);
-}
-
-// Remove a request ID when it's completed or canceled
-export function removeRequest(requestId: string) {
-  activeRequestIds.delete(requestId);
-}
-
-// Check if a request is marked for cancellation
-export function shouldCancelRequest(requestId: string) {
-  return !activeRequestIds.has(requestId);
-}
+import { activeRequestIds } from "../../../../lib/activeRequests"; // Import from the new utility file
 
 export async function POST(request: NextRequest) {
   try {
