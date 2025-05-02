@@ -512,6 +512,32 @@ function InputBox({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        className={`p-1.5 rounded-md hover:cursor-pointer transition-all flex items-center gap-1 ${
+                          modes.lite
+                            ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
+                            : "text-gray-600 hover:bg-gray-200"
+                        }`}
+                        onClick={() => toggleMode("lite")}
+                      >
+                        <ZapIcon height={14} width={14} />
+                        <span className="text-xs">Lite</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
+                    >
+                      <p>
+                        Lightweight mode - text only, no file operations or
+                        advanced features
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
                         className={`p-1.5 rounded-md ${
                           modes.lite
                             ? "opacity-50 cursor-not-allowed"
@@ -594,33 +620,6 @@ function InputBox({
                       <p>
                         &quot;Just Do It&quot; - follows instructions without
                         asking questions
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className={`p-1.5 rounded-md hover:cursor-pointer transition-all flex items-center gap-1 ${
-                          modes.lite
-                            ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
-                            : "text-gray-600 hover:bg-gray-200"
-                        }`}
-                        onClick={() => toggleMode("lite")}
-                      >
-                        <ZapIcon height={14} width={14} />
-                        <span className="text-xs">Lite</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="top"
-                      className="bg-gray-800 text-white text-xs p-2 rounded shadow-md"
-                    >
-                      <p>
-                        Lightweight mode - text only, no file operations or
-                        advanced features
                       </p>
                     </TooltipContent>
                   </Tooltip>
