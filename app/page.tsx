@@ -43,114 +43,108 @@ interface MessageItemProps {
   isLastMessage: boolean;
 }
 
-const MessageItem = memo(({ 
-  msg, 
-  index, 
-  isWaitingForResponse, 
-  isLastMessage 
-}: MessageItemProps) => {
-  if (msg.sender === "user") {
-    return (
-      <div
-        key={msg.id}
-        className={`flex justify-end w-full ${
-          index === 0 ? "-mt-4" : ""
-        }`}
-      >
-        <div className="px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%] break-words">
-          {msg.text}
-        </div>
-      </div>
-    );
-  } else if (msg.sender === "agent") {
-    return (
-      <div
-        key={msg.id}
-        className={`agent-message-container flex flex-col items-start w-full ${
-          index === 0 ? "-mt-4" : ""
-        }`}
-      >
-        <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words">
-          <div className="message-content-wrapper">
-            <AnimatedMarkdown 
-              content={msg.text} 
-              messageId={msg.id}
-              key={`markdown-${msg.id}`} // Add stable key to prevent re-animation
-              onAnimationComplete={(duration) => {
-                // This callback gets called when animation completes
-                // We don't need to do anything special here
-                // MessageActionButtons will handle its own timing
-              }}
-            />
-            <MessageActionButtons
-              messageId={msg.id}
-              content={msg.text}
-              showAfterMs={
-                // Calculate animation time more accurately based on content complexity
-                (() => {
-                  const wordCount = msg.text.split(/\s+/).filter(Boolean).length;
-                  const charCount = msg.text.length;
-                  const lineCount = msg.text.split('\n').length;
-                  
-                  // Base calculation
-                  let delay = Math.max(
-                    1500, // minimum delay
-                    wordCount * 18 // 18ms per word base rate
-                  );
-                  
-                  // Adjust for markdown complexity
-                  if (msg.text.includes('```')) delay += 500; // Code blocks
-                  if (msg.text.includes('#')) delay += 300; // Headers
-                  if (msg.text.includes('- ') || msg.text.includes('* ')) delay += 400; // Lists
-                  if (msg.text.includes('|') && msg.text.includes('-|-')) delay += 600; // Tables
-                  
-                  // Adjust for message length
-                  if (charCount > 1000) delay += 500;
-                  if (lineCount > 10) delay += 400;
-                  
-                  return delay;
-                })()
-              }
-              isComplete={!isWaitingForResponse || !isLastMessage}
-            />
+const MessageItem = memo(
+  ({ msg, index, isWaitingForResponse, isLastMessage }: MessageItemProps) => {
+    if (msg.sender === "user") {
+      return (
+        <div
+          key={msg.id}
+          className={`flex justify-end w-full ${index === 0 ? "-mt-4" : ""}`}
+        >
+          <div className="px-4 py-3 bg-[#EBF2FF] text-[#1A479D] rounded-2xl rounded-br-md mr-1 shadow-sm max-w-[80%] break-words">
+            {msg.text}
           </div>
         </div>
-      </div>
-    );
-  } else if (msg.sender === "function") {
-    return (
-      <div
-        key={msg.id}
-        className="flex justify-start w-full items-center my-2"
-      >
-        <div className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md max-w-[90%] text-sm border border-gray-200">
-          <div className="font-medium text-xs text-gray-600 mb-0.5">
-            Function call:{" "}
-            <span className="text-blue-600">
-              {msg.functionName}
-            </span>
-          </div>
-          {msg.functionResult && (
-            <div className="text-xs mt-2 text-green-600">
-              {msg.functionResult.success
-                ? "✓ Success"
-                : "✗ Failed"}
-              :{" "}
-              {msg.functionResult.message ||
-                (msg.functionResult.success
-                  ? "Operation completed"
-                  : "Operation failed")}
+      );
+    } else if (msg.sender === "agent") {
+      return (
+        <div
+          key={msg.id}
+          className={`agent-message-container flex flex-col items-start w-full ${
+            index === 0 ? "-mt-4" : ""
+          }`}
+        >
+          <div className="px-3 py-2 text-gray-900 rounded-lg max-w-[85%] break-words">
+            <div className="message-content-wrapper">
+              <AnimatedMarkdown
+                content={msg.text}
+                messageId={msg.id}
+                key={`markdown-${msg.id}`} // Add stable key to prevent re-animation
+                onAnimationComplete={(duration) => {
+                  // This callback gets called when animation completes
+                  // We don't need to do anything special here
+                  // MessageActionButtons will handle its own timing
+                }}
+              />
+              <MessageActionButtons
+                messageId={msg.id}
+                content={msg.text}
+                showAfterMs={
+                  // Calculate animation time more accurately based on content complexity
+                  (() => {
+                    const wordCount = msg.text
+                      .split(/\s+/)
+                      .filter(Boolean).length;
+                    const charCount = msg.text.length;
+                    const lineCount = msg.text.split("\n").length;
+
+                    // Base calculation
+                    let delay = Math.max(
+                      1500, // minimum delay
+                      wordCount * 18 // 18ms per word base rate
+                    );
+
+                    // Adjust for markdown complexity
+                    if (msg.text.includes("```")) delay += 500; // Code blocks
+                    if (msg.text.includes("#")) delay += 300; // Headers
+                    if (msg.text.includes("- ") || msg.text.includes("* "))
+                      delay += 400; // Lists
+                    if (msg.text.includes("|") && msg.text.includes("-|-"))
+                      delay += 600; // Tables
+
+                    // Adjust for message length
+                    if (charCount > 1000) delay += 500;
+                    if (lineCount > 10) delay += 400;
+
+                    return delay;
+                  })()
+                }
+                isComplete={!isWaitingForResponse || !isLastMessage}
+              />
             </div>
-          )}
+          </div>
         </div>
-      </div>
-    );
+      );
+    } else if (msg.sender === "function") {
+      return (
+        <div
+          key={msg.id}
+          className="flex justify-start w-full items-center my-2"
+        >
+          <div className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md max-w-[90%] text-sm border border-gray-200">
+            <div className="font-medium text-xs text-gray-600 mb-0.5">
+              Function call:{" "}
+              <span className="text-blue-600">{msg.functionName}</span>
+            </div>
+            {msg.functionResult && (
+              <div className="text-xs mt-2 text-green-600">
+                {msg.functionResult.success ? "✓ Success" : "✗ Failed"}:{" "}
+                {msg.functionResult.message ||
+                  (msg.functionResult.success
+                    ? "Operation completed"
+                    : "Operation failed")}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
   }
-  return null;
-});
+);
 
 // Add display name to avoid warnings
-MessageItem.displayName = 'MessageItem';
+MessageItem.displayName = "MessageItem";
 
 interface InputBoxProps {
   inputValue: string;
@@ -1118,10 +1112,10 @@ export default function Home() {
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   <div className="flex flex-col gap-6 mb-8">
                     {messages.map((msg, index) => (
-                      <MessageItem 
-                        key={msg.id} 
-                        msg={msg} 
-                        index={index} 
+                      <MessageItem
+                        key={msg.id}
+                        msg={msg}
+                        index={index}
                         isWaitingForResponse={isWaitingForResponse}
                         isLastMessage={index === messages.length - 1}
                       />
