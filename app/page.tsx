@@ -33,6 +33,7 @@ type MessageType = {
   functionName?: string;
   functionParams?: any;
   functionResult?: any;
+  calculatedShowAfterMs?: number; // Add this field
 };
 
 // Extract Message component to prevent re-renders when input changes
@@ -79,36 +80,7 @@ const MessageItem = memo(
               <MessageActionButtons
                 messageId={msg.id}
                 content={msg.text}
-                showAfterMs={
-                  // Calculate animation time more accurately based on content complexity
-                  (() => {
-                    const wordCount = msg.text
-                      .split(/\s+/)
-                      .filter(Boolean).length;
-                    const charCount = msg.text.length;
-                    const lineCount = msg.text.split("\n").length;
-
-                    // Base calculation
-                    let delay = Math.max(
-                      1500, // minimum delay
-                      wordCount * 18 // 18ms per word base rate
-                    );
-
-                    // Adjust for markdown complexity
-                    if (msg.text.includes("```")) delay += 500; // Code blocks
-                    if (msg.text.includes("#")) delay += 300; // Headers
-                    if (msg.text.includes("- ") || msg.text.includes("* "))
-                      delay += 400; // Lists
-                    if (msg.text.includes("|") && msg.text.includes("-|-"))
-                      delay += 600; // Tables
-
-                    // Adjust for message length
-                    if (charCount > 1000) delay += 500;
-                    if (lineCount > 10) delay += 400;
-
-                    return delay;
-                  })()
-                }
+                showAfterMs={msg.calculatedShowAfterMs ?? 1500} // Use pre-calculated value, default if missing
                 isComplete={!isWaitingForResponse || !isLastMessage}
               />
             </div>
@@ -669,6 +641,31 @@ export default function Home() {
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
   const currentResponseController = useRef<AbortController | null>(null);
 
+  // Function to calculate delay for MessageActionButtons
+  const calculateShowAfterMs = (text: string): number => {
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    const charCount = text.length;
+    const lineCount = text.split("\n").length;
+
+    // Base calculation
+    let delay = Math.max(
+      1500, // minimum delay
+      wordCount * 18 // 18ms per word base rate
+    );
+
+    // Adjust for markdown complexity
+    if (text.includes("```")) delay += 500; // Code blocks
+    if (text.includes("#")) delay += 300; // Headers
+    if (text.includes("- ") || text.includes("* ")) delay += 400; // Lists
+    if (text.includes("|") && text.includes("-|-")) delay += 600; // Tables
+
+    // Adjust for message length
+    if (charCount > 1000) delay += 500;
+    if (lineCount > 10) delay += 400;
+
+    return delay;
+  };
+
   // Effect to scroll to bottom whenever messages change
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -901,6 +898,7 @@ export default function Home() {
                   }
 
                   responseText = messageText;
+                  const calculatedDelay = calculateShowAfterMs(responseText); // Calculate delay here
 
                   if (!agentMessageAdded) {
                     setMessages((prev) => [
@@ -909,6 +907,7 @@ export default function Home() {
                         id: agentMessageId,
                         text: messageText,
                         sender: "agent",
+                        calculatedShowAfterMs: calculatedDelay, // Store calculated delay
                       },
                     ]);
                     agentMessageAdded = true;
@@ -916,7 +915,11 @@ export default function Home() {
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === agentMessageId
-                          ? { ...m, text: messageText }
+                          ? {
+                              ...m,
+                              text: messageText,
+                              calculatedShowAfterMs: calculatedDelay,
+                            } // Update calculated delay
                           : m
                       )
                     );
@@ -969,6 +972,15 @@ export default function Home() {
                     setIsTyping(false);
                   }
                   setShowSpinner(false);
+
+                  // Final update for the last agent message to ensure isComplete is true for MessageActionButtons
+                  if (agentMessageAdded) {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === agentMessageId ? { ...m } : m
+                      )
+                    );
+                  }
                 }
               } catch (error) {
                 console.error("Error parsing event:", error, eventString);
@@ -981,6 +993,12 @@ export default function Home() {
           }
         }
         setShowSpinner(false);
+        // Final update after stream ends to ensure isComplete is true for MessageActionButtons
+        if (agentMessageAdded) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === agentMessageId ? { ...m } : m))
+          );
+        }
       };
 
       processEvents().catch((error) => {

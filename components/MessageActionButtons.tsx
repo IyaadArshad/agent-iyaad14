@@ -28,10 +28,6 @@ const MessageActionButtons: React.FC<MessageActionButtonsProps> = ({
 }) => {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const hasShownRef = useRef(false);
-
-  // Add additional buffer time to ensure animations complete
-  const ADDITIONAL_BUFFER = 800; // Extra 800ms buffer
 
   useEffect(() => {
     // Clear existing timer if any
@@ -39,35 +35,22 @@ const MessageActionButtons: React.FC<MessageActionButtonsProps> = ({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    setVisible(false); // Reset visibility on re-render/prop change
 
-    // Only set a timer if we haven't shown the buttons yet
-    if (!hasShownRef.current) {
-      const totalDelay = showAfterMs + ADDITIONAL_BUFFER;
-
+    // Set a timer to show buttons if the message is complete
+    if (isComplete) {
       timerRef.current = setTimeout(() => {
-        // Only show if the message is marked complete
-        if (isComplete) {
-          setVisible(true);
-          hasShownRef.current = true;
-        }
+        setVisible(true);
         timerRef.current = null;
-      }, totalDelay);
+      }, showAfterMs); // Use the provided delay directly
 
       console.debug(
-        `MessageActionButtons: Scheduling visibility for ${messageId} after ${totalDelay}ms`
+        `MessageActionButtons: Scheduling visibility for ${messageId} after ${showAfterMs}ms`
       );
-    }
-
-    // Check if we should show immediately (if animation already completed and a long time has passed)
-    // Only for older messages that are already complete - not for new ones still animating
-    if (
-      isComplete &&
-      !hasShownRef.current &&
-      !timerRef.current &&
-      showAfterMs === 0
-    ) {
-      setVisible(true);
-      hasShownRef.current = true;
+    } else {
+      console.debug(
+        `MessageActionButtons: Not scheduling visibility for ${messageId} as isComplete is false.`
+      );
     }
 
     return () => {
