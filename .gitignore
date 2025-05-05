@@ -10,6 +10,9 @@
 !.yarn/releases
 !.yarn/versions
 
+/old-api
+old-api
+
 # testing
 /coverage
 
