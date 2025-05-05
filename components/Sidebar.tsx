@@ -26,6 +26,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useRouter } from "next/navigation";
 
 function NavUser({
   user = {
@@ -35,6 +36,9 @@ function NavUser({
     isGuest: true,
   },
   collapsed = false,
+  onLoginClick = () => {},
+  onSignupClick = () => {},
+  onLogout = () => {},
 }: {
   user?: {
     name: string;
@@ -43,6 +47,9 @@ function NavUser({
     isGuest?: boolean;
   };
   collapsed?: boolean;
+  onLoginClick?: () => void;
+  onSignupClick?: () => void;
+  onLogout?: () => void;
 }) {
   return (
     <div
@@ -110,21 +117,18 @@ function NavUser({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             {user.isGuest ? (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuItem>
-                      <LogInIcon className="mr-2 h-4 w-4" />
-                      Sign In
-                    </DropdownMenuItem>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Sign in to save your data</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <>
+                <DropdownMenuItem onClick={onLoginClick}>
+                  <LogInIcon className="mr-2 h-4 w-4" />
+                  Sign In
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onSignupClick}>
+                  <UserCircleIcon className="mr-2 h-4 w-4" />
+                  Create Account
+                </DropdownMenuItem>
+              </>
             ) : (
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={onLogout}>
                 <LogOutIcon className="mr-2 h-4 w-4" />
                 Log out
               </DropdownMenuItem>
@@ -134,40 +138,57 @@ function NavUser({
               Usage
             </DropdownMenuItem>
           </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem>
-            <UserCircleIcon className="mr-2 h-4 w-4" />
-            Profile
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
   );
 }
 
-interface ConversationHistoryItem {
+// Update interface to match page.tsx type definitions
+interface Conversation {
   id: string;
   title: string;
   date: Date;
+  messages?: any[]; // Add messages property (optional for sidebar purposes)
+}
+
+interface RecentDocument {
+  id: string;
+  name: string;
+  lastOpened: Date;
 }
 
 interface SidebarProps {
   isCollapsed: boolean;
   toggleSidebar: () => void;
-  conversationHistory: ConversationHistoryItem[];
-  currentConversationId?: string;
+  conversationHistory: Conversation[];
+  recentDocuments: RecentDocument[];
+  activeConversationId?: string | null;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onOpenLibrary?: () => void;
+  onLoginClick?: () => void;
+  onSignupClick?: () => void;
+  onLogout?: () => void;
+  onSelectDocument?: (id: string) => void;
 }
 
 export function Sidebar({
   isCollapsed,
   toggleSidebar,
   conversationHistory,
-  currentConversationId,
+  recentDocuments,
+  activeConversationId,
   onNewChat,
   onSelectConversation,
+  onOpenLibrary = () => {},
+  onLoginClick = () => {},
+  onSignupClick = () => {},
+  onLogout = () => {},
+  onSelectDocument = () => {},
 }: SidebarProps) {
+  const router = useRouter();
+
   // Group conversations by date: today, previous 7 days, previous 30 days
   const todaysDate = new Date().setHours(0, 0, 0, 0);
   const previous7Days = new Date(todaysDate);
@@ -189,11 +210,49 @@ export function Sidebar({
     );
   });
 
-  const recentlyOpenedDocuments = [
-    { id: "doc1", title: "Example BRS Document" },
-    { id: "doc2", title: "Payment Processing BRS" },
-    { id: "doc3", title: "API Integration Specification" },
-  ];
+  // Handle document selection
+  const handleDocumentClick = (docId: string) => {
+    if (onSelectDocument) {
+      onSelectDocument(docId);
+    } else {
+      router.push(`/document/${docId}`);
+    }
+  };
+
+  // Get user data from local storage
+  const getUserFromLocalStorage = () => {
+    if (typeof window !== "undefined") {
+      try {
+        const userData = localStorage.getItem("user");
+        if (userData) {
+          return JSON.parse(userData);
+        }
+      } catch (error) {
+        console.error("Error parsing user data from localStorage:", error);
+      }
+    }
+    return {
+      name: "Guest User",
+      email: "guest@datamation.lk",
+      avatar: "/icons/user-male-circle.png",
+      isGuest: true,
+    };
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("user");
+      // Reload page to update state
+      window.location.reload();
+    }
+    if (onLogout) {
+      onLogout();
+    }
+  };
+
+  // Get current user
+  const currentUser = getUserFromLocalStorage();
 
   return (
     <aside
@@ -293,6 +352,7 @@ export function Sidebar({
           <Tooltip>
             <TooltipTrigger asChild>
               <button
+                onClick={onOpenLibrary}
                 className={cn(
                   "flex items-center hover:cursor-pointer rounded-lg transition-colors",
                   isCollapsed
@@ -319,24 +379,40 @@ export function Sidebar({
       {!isCollapsed && (
         <>
           <Separator className="my-2 bg-gray-200" />
-          {/* Recently opened documents Section */}
-          <div className="px-3 py-2">
-            <h3 className="text-xs font-medium text-gray-500 px-2 pb-3 py-1">
-              Recently opened documents
-            </h3>
-            {recentlyOpenedDocuments.map((doc) => (
-              <button
-                key={doc.id}
-                className="flex items-center w-full px-3 py-2 rounded-lg hover:bg-gray-100 text-left text-sm transition-colors"
-              >
-                <FolderIcon className="h-4 w-4 mr-2 text-[#1A479D]" />
-                <span className="text-gray-700 truncate">{doc.title}</span>
-              </button>
-            ))}
-          </div>
-          <Separator className="my-2 bg-gray-200" />
+
+          {/* Recently opened documents Section - Only show if there are recent documents */}
+          {recentDocuments.length > 0 && (
+            <>
+              <div className="px-3 py-2">
+                <h3 className="text-xs font-medium text-gray-500 px-2 pb-3 py-1">
+                  Recently opened documents
+                </h3>
+                {recentDocuments.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => handleDocumentClick(doc.id)}
+                    className="flex items-center w-full px-3 py-2 rounded-lg hover:bg-gray-100 text-left text-sm transition-colors"
+                  >
+                    <div className="flex items-center truncate">
+                      <FolderIcon className="h-4 w-4 mr-2 text-[#1A479D] flex-shrink-0" />
+                      <span className="text-gray-700 truncate">{doc.name}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <Separator className="my-2 bg-gray-200" />
+            </>
+          )}
+
           {/* Conversation History Section */}
           <div className="flex-1 overflow-y-auto px-3">
+            {/* Show message if no conversations */}
+            {conversationHistory.length === 0 && (
+              <div className="text-xs text-gray-500 px-2 py-3">
+                No conversation history
+              </div>
+            )}
+
             {/* Today */}
             {todayConversations.length > 0 && (
               <>
@@ -349,12 +425,12 @@ export function Sidebar({
                     onClick={() => onSelectConversation(item.id)}
                     className={cn(
                       "flex items-center w-full px-3 py-2 rounded-lg text-left text-sm transition-colors mb-1",
-                      currentConversationId === item.id
+                      activeConversationId === item.id
                         ? "bg-[#EBF2FF] text-[#1A479D]"
                         : "hover:bg-gray-100 text-gray-700"
                     )}
                   >
-                    {item.title}
+                    <span className="truncate">{item.title}</span>
                   </button>
                 ))}
               </>
@@ -371,12 +447,12 @@ export function Sidebar({
                     onClick={() => onSelectConversation(item.id)}
                     className={cn(
                       "flex items-center w-full px-3 py-2 rounded-lg text-left text-sm transition-colors mb-1",
-                      currentConversationId === item.id
+                      activeConversationId === item.id
                         ? "bg-[#EBF2FF] text-[#1A479D]"
                         : "hover:bg-gray-100 text-gray-700"
                     )}
                   >
-                    {item.title}
+                    <span className="truncate">{item.title}</span>
                   </button>
                 ))}
               </>
@@ -393,12 +469,12 @@ export function Sidebar({
                     onClick={() => onSelectConversation(item.id)}
                     className={cn(
                       "flex items-center w-full px-3 py-2 rounded-lg text-left text-sm transition-colors mb-1",
-                      currentConversationId === item.id
+                      activeConversationId === item.id
                         ? "bg-[#EBF2FF] text-[#1A479D]"
                         : "hover:bg-gray-100 text-gray-700"
                     )}
                   >
-                    {item.title}
+                    <span className="truncate">{item.title}</span>
                   </button>
                 ))}
               </>
@@ -408,7 +484,13 @@ export function Sidebar({
       )}
 
       {/* User section at the bottom */}
-      <NavUser collapsed={isCollapsed} />
+      <NavUser
+        user={currentUser}
+        collapsed={isCollapsed}
+        onLoginClick={onLoginClick}
+        onSignupClick={onSignupClick}
+        onLogout={handleLogout}
+      />
     </aside>
   );
 }

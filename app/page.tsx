@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 import MessageActionButtons from "@/components/MessageActionButtons";
+import { getRecentDocuments, RecentDocument } from "@/lib/utils"; // Import utility functions
+import { AuthModals } from "@/components/Auth/AuthModals";
+import { useRouter } from "next/navigation";
 
 // Define message type including function calls and results
 type MessageType = {
@@ -34,6 +37,14 @@ type MessageType = {
   functionParams?: any;
   functionResult?: any;
   calculatedShowAfterMs?: number; // Add this field
+};
+
+// Define type for a single conversation in history
+type Conversation = {
+  id: string;
+  title: string;
+  date: Date;
+  messages: MessageType[]; // Add messages to conversation type
 };
 
 // Extract Message component to prevent re-renders when input changes
@@ -616,12 +627,19 @@ function InputBox({
 }
 
 export default function Home() {
-  const conversationHistory = [
-    { id: "1", title: "Conversation 1", date: new Date() },
-    { id: "2", title: "Conversation 2", date: new Date() },
-  ];
+  // State for conversation history, loaded from localStorage
+  const [conversationHistory, setConversationHistory] = useState<
+    Conversation[]
+  >([]);
+  // State for recent documents, loaded from localStorage
+  const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([]);
+  // State for the currently active conversation ID
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
 
   const [inputValue, setInputValue] = useState("");
+  // Messages state now represents the messages of the *active* conversation
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -640,6 +658,80 @@ export default function Home() {
   const [isStopping, setIsStopping] = useState(false);
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
   const currentResponseController = useRef<AbortController | null>(null);
+
+  // Add new state variables for authentication modals
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSignupModal, setShowSignupModal] = useState(false);
+  const router = useRouter();
+
+  // Load conversation history from localStorage on initial mount
+  useEffect(() => {
+    const storedHistory = localStorage.getItem("conversationHistory");
+    if (storedHistory) {
+      try {
+        const parsedHistory: Conversation[] = JSON.parse(storedHistory).map(
+          (conv: any) => ({
+            ...conv,
+            date: new Date(conv.date), // Ensure date is a Date object
+          })
+        );
+        setConversationHistory(parsedHistory);
+        // Optionally, load the last active conversation
+        if (parsedHistory.length > 0) {
+          const lastConv = parsedHistory[parsedHistory.length - 1];
+          setActiveConversationId(lastConv.id);
+          setMessages(lastConv.messages);
+          setShowChat(true); // Show chat if there's history
+          setWelcomeOpacity(0);
+          setChatOpacity(1);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to parse conversation history from localStorage:",
+          error
+        );
+        setConversationHistory([]); // Reset if parsing fails
+      }
+    }
+
+    // Load recent documents from localStorage
+    const recentDocs = getRecentDocuments();
+    setRecentDocuments(recentDocs);
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  // Save conversation history to localStorage whenever it changes
+  useEffect(() => {
+    // Update the messages for the active conversation before saving
+    if (activeConversationId) {
+      const updatedHistory = conversationHistory.map((conv) =>
+        conv.id === activeConversationId
+          ? { ...conv, messages: messages }
+          : conv
+      );
+      // Only save if the history actually changed to avoid infinite loops if messages didn't change
+      if (
+        JSON.stringify(updatedHistory) !== JSON.stringify(conversationHistory)
+      ) {
+        setConversationHistory(updatedHistory); // Update state first
+        localStorage.setItem(
+          "conversationHistory",
+          JSON.stringify(updatedHistory)
+        );
+      } else {
+        // If only messages changed, still save
+        localStorage.setItem(
+          "conversationHistory",
+          JSON.stringify(updatedHistory)
+        );
+      }
+    } else if (conversationHistory.length > 0) {
+      // Save even if no active conversation (e.g., after creating a new one but before sending messages)
+      localStorage.setItem(
+        "conversationHistory",
+        JSON.stringify(conversationHistory)
+      );
+    }
+  }, [messages, activeConversationId, conversationHistory]); // Depend on messages and active ID
 
   // Function to calculate delay for MessageActionButtons
   const calculateShowAfterMs = (text: string): number => {
@@ -759,7 +851,7 @@ export default function Home() {
   const sendMessage = async (msg: string) => {
     if (!msg.trim() || isWaitingForResponse) return;
 
-    // Add user message to the conversation
+    // Add user message to the *current* conversation's messages
     const userMessageId = Date.now().toString();
     const userMessage: MessageType = {
       id: userMessageId,
@@ -767,7 +859,24 @@ export default function Home() {
       sender: "user",
     };
 
+    // Update messages state for the active conversation
     setMessages((prev) => [...prev, userMessage]);
+
+    // If this is the first message of a new chat, update history title
+    if (messages.length === 0 && activeConversationId) {
+      setConversationHistory((prevHistory) =>
+        prevHistory.map((conv) =>
+          conv.id === activeConversationId
+            ? {
+                ...conv,
+                title:
+                  msg.substring(0, 30) + (msg.length > 30 ? "..." : ""),
+              }
+            : conv
+        )
+      );
+    }
+
     setWelcomeOpacity(0);
     setInputValue("");
     setIsWaitingForResponse(true);
@@ -1082,14 +1191,75 @@ export default function Home() {
     });
   };
 
+  // Handlers for Sidebar
+  const handleNewChat = () => {
+    const newConversationId = `conv-${Date.now()}`;
+    const newConversation: Conversation = {
+      id: newConversationId,
+      title: "New Chat", // Temporary title
+      date: new Date(),
+      messages: [],
+    };
+    setConversationHistory((prev) => [...prev, newConversation]);
+    setActiveConversationId(newConversationId);
+    setMessages([]); // Clear messages for the new chat
+    setShowChat(true); // Ensure chat view is shown
+    setWelcomeOpacity(0);
+    setChatOpacity(1);
+    setInputValue(""); // Clear input field
+    // TODO: Maybe focus input field here
+  };
+
+  const handleSelectConversation = (id: string) => {
+    const selectedConv = conversationHistory.find((conv) => conv.id === id);
+    if (selectedConv) {
+      setActiveConversationId(id);
+      setMessages(selectedConv.messages);
+      setShowChat(true); // Ensure chat view is shown
+      setWelcomeOpacity(0);
+      setChatOpacity(1);
+    }
+  };
+
+  // Add function to navigate to library
+  const navigateToLibrary = () => {
+    router.push("/library");
+  };
+
+  // Add functions to handle authentication modal visibility
+  const handleLoginClick = () => {
+    setShowLoginModal(true);
+    setShowSignupModal(false);
+  };
+
+  const handleSignupClick = () => {
+    setShowSignupModal(true);
+    setShowLoginModal(false);
+  };
+
+  const handleSwitchToSignup = () => {
+    setShowLoginModal(false);
+    setShowSignupModal(true);
+  };
+
+  const handleSwitchToLogin = () => {
+    setShowSignupModal(false);
+    setShowLoginModal(true);
+  };
+
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className={`flex min-h-screen h-screen bg-white`}>
       <Sidebar
         isCollapsed={false}
         toggleSidebar={() => {}}
-        conversationHistory={conversationHistory}
-        onNewChat={() => {}}
-        onSelectConversation={(id) => console.log("Selected:", id)}
+        conversationHistory={conversationHistory} // Pass state variable
+        recentDocuments={recentDocuments} // Pass state variable (placeholder)
+        onNewChat={handleNewChat} // Pass handler
+        onSelectConversation={handleSelectConversation} // Pass handler
+        activeConversationId={activeConversationId} // Pass active ID for highlighting
+        onOpenLibrary={navigateToLibrary}
+        onLoginClick={handleLoginClick}
+        onSignupClick={handleSignupClick}
       />
       <div className="flex-1 flex flex-col relative">
         {!showChat ? (
@@ -1147,12 +1317,14 @@ export default function Home() {
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   <div className="flex flex-col gap-6 mb-8">
+                    {/* Render messages from the active conversation's state */}
                     {messages.map((msg, index) => (
                       <MessageItem
-                        key={msg.id}
+                        key={msg.id} // Use message ID as key
                         msg={msg}
                         index={index}
                         isWaitingForResponse={isWaitingForResponse}
+                        // Pass isLastMessage based on the current 'messages' state array
                         isLastMessage={index === messages.length - 1}
                       />
                     ))}
@@ -1189,7 +1361,7 @@ export default function Home() {
                     <InputBox
                       inputValue={inputValue}
                       setInputValue={setInputValue}
-                      onSendMessage={sendMessage}
+                      onSendMessage={sendMessage} // Use the main sendMessage
                       onStopResponse={stopResponse}
                       placeholder="Type your next message here or drop files..."
                       showBottomSection={true}
@@ -1226,6 +1398,15 @@ export default function Home() {
           </footer>
         )}
       </div>
+      {/* Add the authentication modals */}
+      <AuthModals
+        showLoginModal={showLoginModal}
+        showSignupModal={showSignupModal}
+        onCloseLoginModal={() => setShowLoginModal(false)}
+        onCloseSignupModal={() => setShowSignupModal(false)}
+        onSwitchToSignup={handleSwitchToSignup}
+        onSwitchToLogin={handleSwitchToLogin}
+      />
     </div>
   );
 }
