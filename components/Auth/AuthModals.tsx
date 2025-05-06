@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal } from '@/components/ui/modal';
 import { LoginForm } from './LoginForm';
-import { useState } from 'react';
 
 interface SignupFormProps {
   onSignup: (email: string, password: string | null) => void;
@@ -194,14 +193,43 @@ export function AuthModals({
   onSwitchToSignup,
   onSwitchToLogin,
 }: AuthModalsProps) {
+  const [loginLoading, setLoginLoading] = useState(false);
+  const handleLogin = async (email: string, password: string | null) => {
+    setLoginLoading(true);
+    try {
+      // TODO: Implement login logic
+    } finally {
+      setLoginLoading(false);
+      onCloseLoginModal();
+    }
+  };
+  const [signupLoading, setSignupLoading] = useState(false);
+  const handleSignup = async (email: string, password: string | null) => {
+    setSignupLoading(true);
+    try {
+      // TODO: Implement signup logic
+    } finally {
+      setSignupLoading(false);
+      onCloseSignupModal();
+    }
+  };
+
   return (
     <>
       <Modal isOpen={showLoginModal} onClose={onCloseLoginModal} title="Login to FiNAC">
-        <LoginForm onSwitchToSignup={onSwitchToSignup} />
+        <LoginForm
+          onLogin={handleLogin}
+          onSwitchToSignup={onSwitchToSignup}
+          isLoading={loginLoading}
+        />
       </Modal>
       
       <Modal isOpen={showSignupModal} onClose={onCloseSignupModal} title="Create Account">
-        <SignupForm onSwitchToLogin={onSwitchToLogin} />
+        <SignupForm
+          onSignup={handleSignup}
+          onSwitchToLogin={onSwitchToLogin}
+          isLoading={signupLoading}
+        />
       </Modal>
     </>
   );

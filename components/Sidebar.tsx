@@ -55,8 +55,8 @@ function NavUser({
     <div
       className={
         collapsed
-          ? "mt-auto py-2 flex justify-center"
-          : "mt-auto px-3 py-2 border-t border-gray-200"
+          ? "mt-auto py-2 flex justify-center hover:cursor-pointer"
+          : "mt-auto px-3 py-2 border-t border-gray-200 hover:cursor-pointer"
       }
     >
       <DropdownMenu>

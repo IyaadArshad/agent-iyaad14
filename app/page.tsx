@@ -627,6 +627,7 @@ function InputBox({
 }
 
 export default function Home() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   // State for conversation history, loaded from localStorage
   const [conversationHistory, setConversationHistory] = useState<
     Conversation[]
@@ -676,15 +677,6 @@ export default function Home() {
           })
         );
         setConversationHistory(parsedHistory);
-        // Optionally, load the last active conversation
-        if (parsedHistory.length > 0) {
-          const lastConv = parsedHistory[parsedHistory.length - 1];
-          setActiveConversationId(lastConv.id);
-          setMessages(lastConv.messages);
-          setShowChat(true); // Show chat if there's history
-          setWelcomeOpacity(0);
-          setChatOpacity(1);
-        }
       } catch (error) {
         console.error(
           "Failed to parse conversation history from localStorage:",
@@ -1203,9 +1195,9 @@ export default function Home() {
     setConversationHistory((prev) => [...prev, newConversation]);
     setActiveConversationId(newConversationId);
     setMessages([]); // Clear messages for the new chat
-    setShowChat(true); // Ensure chat view is shown
-    setWelcomeOpacity(0);
-    setChatOpacity(1);
+    setShowChat(false); // Show welcome instead of chat
+    setWelcomeOpacity(1);
+    setChatOpacity(0);
     setInputValue(""); // Clear input field
     // TODO: Maybe focus input field here
   };
@@ -1250,8 +1242,8 @@ export default function Home() {
   return (
     <div className={`flex min-h-screen h-screen bg-white`}>
       <Sidebar
-        isCollapsed={false}
-        toggleSidebar={() => {}}
+        isCollapsed={isCollapsed}
+        toggleSidebar={() => setIsCollapsed((prev) => !prev)}
         conversationHistory={conversationHistory} // Pass state variable
         recentDocuments={recentDocuments} // Pass state variable (placeholder)
         onNewChat={handleNewChat} // Pass handler
