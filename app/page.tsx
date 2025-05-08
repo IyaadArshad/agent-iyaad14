@@ -21,14 +21,24 @@ import {
   ThumbsDownIcon,
   RefreshCwIcon,
   PencilIcon,
+  BellIcon,
+  SettingsIcon,
+  PaperclipIcon,
+  UploadIcon,
 } from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 import MessageActionButtons from "@/components/MessageActionButtons";
-import { getRecentDocuments, RecentDocument } from "@/lib/utils"; // Import utility functions
+import { getRecentDocuments, RecentDocument } from "@/lib/utils";
 import { AuthModals } from "@/components/Auth/AuthModals";
 import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { Modal } from "@/components/ui/modal";
 
-// Define message type including function calls and results
 type MessageType = {
   id: string;
   text: string;
@@ -36,18 +46,16 @@ type MessageType = {
   functionName?: string;
   functionParams?: any;
   functionResult?: any;
-  calculatedShowAfterMs?: number; // Add this field
+  calculatedShowAfterMs?: number;
 };
 
-// Define type for a single conversation in history
 type Conversation = {
   id: string;
   title: string;
   date: Date;
-  messages: MessageType[]; // Add messages to conversation type
+  messages: MessageType[];
 };
 
-// Extract Message component to prevent re-renders when input changes
 interface MessageItemProps {
   msg: MessageType;
   index: number;
@@ -81,17 +89,13 @@ const MessageItem = memo(
               <AnimatedMarkdown
                 content={msg.text}
                 messageId={msg.id}
-                key={`markdown-${msg.id}`} // Add stable key to prevent re-animation
-                onAnimationComplete={(duration) => {
-                  // This callback gets called when animation completes
-                  // We don't need to do anything special here
-                  // MessageActionButtons will handle its own timing
-                }}
+                key={`markdown-${msg.id}`}
+                onAnimationComplete={(duration) => {}}
               />
               <MessageActionButtons
                 messageId={msg.id}
                 content={msg.text}
-                showAfterMs={msg.calculatedShowAfterMs ?? 1500} // Use pre-calculated value, default if missing
+                showAfterMs={msg.calculatedShowAfterMs ?? 1500}
                 isComplete={!isWaitingForResponse || !isLastMessage}
               />
             </div>
@@ -126,7 +130,6 @@ const MessageItem = memo(
   }
 );
 
-// Add display name to avoid warnings
 MessageItem.displayName = "MessageItem";
 
 interface InputBoxProps {
@@ -140,9 +143,9 @@ interface InputBoxProps {
     search: boolean;
     reason: boolean;
     jdi: boolean;
-    lite: boolean; // Add lite mode
+    lite: boolean;
   };
-  toggleMode?: (mode: "search" | "reason" | "jdi" | "lite") => void; // Update toggleMode to include lite
+  toggleMode?: (mode: "search" | "reason" | "jdi" | "lite") => void;
   className?: string;
   isWaitingForResponse?: boolean;
   uploadFiles?: (files: FileList) => Promise<void>;
@@ -155,7 +158,7 @@ function InputBox({
   onStopResponse = () => {},
   placeholder = "Type something great here or drop files...",
   showBottomSection = false,
-  modes = { search: false, reason: false, jdi: false, lite: false }, // Add lite default
+  modes = { search: false, reason: false, jdi: false, lite: false },
   toggleMode = () => {},
   className = "",
   isWaitingForResponse = false,
@@ -317,26 +320,22 @@ function InputBox({
                     : "hover:bg-gray-100 hover:cursor-pointer"
                 } transition-all text-gray-600 relative`}
                 onClick={async () => {
-                  if (modes.lite) return; // Disable file upload in lite mode
+                  if (modes.lite) return;
 
                   setIconState("loading");
 
-                  // Create and set up a timer to reset icon state if dialog is canceled
                   const resetTimer = setTimeout(() => {
-                    setIconState("idle"); // Reset to idle after timeout
-                  }, 5000); // 5 second timeout as fallback
+                    setIconState("idle");
+                  }, 5000);
 
-                  // Click the file input
                   const fileInput = document.getElementById(
                     "chat-file-input"
                   ) as HTMLInputElement | null;
                   if (fileInput) {
                     fileInput.click();
 
-                    // Listen for focus to detect when dialog is closed without selection
                     const handleFocus = () => {
                       clearTimeout(resetTimer);
-                      // Small delay to check if files were selected
                       setTimeout(() => {
                         if (!fileInput.files || fileInput.files.length === 0) {
                           setIconState("idle");
@@ -344,7 +343,6 @@ function InputBox({
                       }, 100);
                     };
 
-                    // Add focus event listener to window to detect dialog close
                     window.addEventListener("focus", handleFocus, {
                       once: true,
                     });
@@ -358,7 +356,6 @@ function InputBox({
                       : "opacity-0 pointer-events-none"
                   }`}
                 >
-                  {/* Paperclip icon */}
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="14"
@@ -381,7 +378,6 @@ function InputBox({
                       : "opacity-0 pointer-events-none"
                   }`}
                 >
-                  {/* Loading spinner */}
                   <svg
                     className="animate-spin"
                     width="16"
@@ -413,7 +409,6 @@ function InputBox({
                       : "opacity-0 pointer-events-none"
                   }`}
                 >
-                  {/* Check icon */}
                   <svg
                     width="16"
                     height="16"
@@ -455,7 +450,7 @@ function InputBox({
                   multiple
                   className="hidden"
                   onChange={async (e) => {
-                    if (modes.lite) return; // Ignore file uploads in lite mode
+                    if (modes.lite) return;
 
                     const files = e.target.files;
                     if (!files || files.length === 0) {
@@ -522,16 +517,16 @@ function InputBox({
                     <TooltipTrigger asChild>
                       <button
                         className={`p-1.5 rounded-md ${
-                          modes.lite || modes.reason // Disable search if lite or reason is on
+                          modes.lite || modes.reason
                             ? "opacity-50 cursor-not-allowed"
                             : "hover:cursor-pointer hover:bg-gray-200"
                         } transition-all flex items-center gap-1 ${
-                          modes.search && !modes.lite && !modes.reason // Only show active if search is on AND lite/reason are off
+                          modes.search && !modes.lite && !modes.reason
                             ? "bg-[#EBF2FF] text-[#1A479D] border border-[#1A479D]/20"
                             : "text-gray-600"
                         }`}
                         onClick={() =>
-                          !modes.lite && !modes.reason && toggleMode("search") // Prevent click if lite or reason is on
+                          !modes.lite && !modes.reason && toggleMode("search")
                         }
                       >
                         <SearchIcon className="h-3.5 w-3.5" />
@@ -628,23 +623,19 @@ function InputBox({
 
 export default function Home() {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // State for conversation history, loaded from localStorage
   const [conversationHistory, setConversationHistory] = useState<
     Conversation[]
   >([]);
-  // State for recent documents, loaded from localStorage
   const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([]);
-  // State for the currently active conversation ID
   const [activeConversationId, setActiveConversationId] = useState<
     string | null
   >(null);
 
   const [inputValue, setInputValue] = useState("");
-  // Messages state now represents the messages of the *active* conversation
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const [welcomeOpacity, setWelcomeOpacity] = useState(1);
@@ -653,19 +644,31 @@ export default function Home() {
     search: false,
     reason: false,
     jdi: false,
-    lite: false, // Add lite mode
+    lite: false,
   });
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
   const currentResponseController = useRef<AbortController | null>(null);
 
-  // Add new state variables for authentication modals
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
   const router = useRouter();
 
-  // Load conversation history from localStorage on initial mount
+  const [useLiteOnFirst, setUseLiteOnFirst] = useState(false);
+  const [notifications, setNotifications] = useState<
+    { id: string; text: string }[]
+  >([]);
+  useEffect(() => {
+    const stored = localStorage.getItem("useLiteOnFirst");
+    if (stored !== null) setUseLiteOnFirst(stored === "true");
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("useLiteOnFirst", useLiteOnFirst.toString());
+  }, [useLiteOnFirst]);
+
+  const [showImproveBRS, setShowImproveBRS] = useState(false);
+
   useEffect(() => {
     const storedHistory = localStorage.getItem("conversationHistory");
     if (storedHistory) {
@@ -673,7 +676,7 @@ export default function Home() {
         const parsedHistory: Conversation[] = JSON.parse(storedHistory).map(
           (conv: any) => ({
             ...conv,
-            date: new Date(conv.date), // Ensure date is a Date object
+            date: new Date(conv.date),
           })
         );
         setConversationHistory(parsedHistory);
@@ -682,79 +685,64 @@ export default function Home() {
           "Failed to parse conversation history from localStorage:",
           error
         );
-        setConversationHistory([]); // Reset if parsing fails
+        setConversationHistory([]);
       }
     }
 
-    // Load recent documents from localStorage
     const recentDocs = getRecentDocuments();
     setRecentDocuments(recentDocs);
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
-  // Save conversation history to localStorage whenever it changes
   useEffect(() => {
-    // Update the messages for the active conversation before saving
     if (activeConversationId) {
       const updatedHistory = conversationHistory.map((conv) =>
         conv.id === activeConversationId
           ? { ...conv, messages: messages }
           : conv
       );
-      // Only save if the history actually changed to avoid infinite loops if messages didn't change
       if (
         JSON.stringify(updatedHistory) !== JSON.stringify(conversationHistory)
       ) {
-        setConversationHistory(updatedHistory); // Update state first
+        setConversationHistory(updatedHistory);
         localStorage.setItem(
           "conversationHistory",
           JSON.stringify(updatedHistory)
         );
       } else {
-        // If only messages changed, still save
         localStorage.setItem(
           "conversationHistory",
           JSON.stringify(updatedHistory)
         );
       }
     } else if (conversationHistory.length > 0) {
-      // Save even if no active conversation (e.g., after creating a new one but before sending messages)
       localStorage.setItem(
         "conversationHistory",
         JSON.stringify(conversationHistory)
       );
     }
-  }, [messages, activeConversationId, conversationHistory]); // Depend on messages and active ID
+  }, [messages, activeConversationId, conversationHistory]);
 
-  // Function to calculate delay for MessageActionButtons
   const calculateShowAfterMs = (text: string): number => {
     const wordCount = text.split(/\s+/).filter(Boolean).length;
     const charCount = text.length;
     const lineCount = text.split("\n").length;
 
-    // Base calculation
-    let delay = Math.max(
-      1500, // minimum delay
-      wordCount * 18 // 18ms per word base rate
-    );
+    let delay = Math.max(1500, wordCount * 18);
 
-    // Adjust for markdown complexity
-    if (text.includes("```")) delay += 500; // Code blocks
-    if (text.includes("#")) delay += 300; // Headers
-    if (text.includes("- ") || text.includes("* ")) delay += 400; // Lists
-    if (text.includes("|") && text.includes("-|-")) delay += 600; // Tables
+    if (text.includes("```")) delay += 500;
+    if (text.includes("#")) delay += 300;
+    if (text.includes("- ") || text.includes("* ")) delay += 400;
+    if (text.includes("|") && text.includes("-|-")) delay += 600;
 
-    // Adjust for message length
     if (charCount > 1000) delay += 500;
     if (lineCount > 10) delay += 400;
 
     return delay;
   };
 
-  // Effect to scroll to bottom whenever messages change
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer) {
-      // Use setTimeout to ensure scrolling happens after DOM update and rendering
       setTimeout(() => {
         scrollContainer.scrollTo({
           top: scrollContainer.scrollHeight,
@@ -762,9 +750,8 @@ export default function Home() {
         });
       }, 0);
     }
-  }, [messages]); // Trigger effect when messages array changes
+  }, [messages]);
 
-  // Function to handle file uploads
   const uploadFiles = async (files: FileList): Promise<void> => {
     if (!files || files.length === 0) return;
 
@@ -772,7 +759,6 @@ export default function Home() {
     let uploadedFileNames: string[] = [];
 
     try {
-      // Upload each file to the vector store
       for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append("file", file);
@@ -796,11 +782,36 @@ export default function Home() {
         }
       }
 
-      // Update state with the uploaded file IDs
       setUploadedFileIds((prev) => [...prev, ...uploadedIds]);
     } catch (error) {
       console.error("Error uploading files:", error);
       throw error;
+    }
+  };
+
+  const handleImproveBRSFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    try {
+      await uploadFiles(files);
+      const fileNames = Array.from(files)
+        .map((file) => file.name)
+        .join(", ");
+      setInputValue(
+        `I've uploaded ${fileNames}. Please improve this BRS document by making it more concise, fixing any inconsistencies, and adding necessary details where needed.`
+      );
+      setShowImproveBRS(false);
+      setShowChat(true);
+      setWelcomeOpacity(0);
+      setChatOpacity(1);
+      setTimeout(() => {
+        const inputElement = document.querySelector(
+          "textarea"
+        ) as HTMLTextAreaElement | null;
+        if (inputElement) inputElement.focus();
+      }, 100);
+    } catch (error) {
+      console.error("Error uploading files in Improve BRS mode:", error);
     }
   };
 
@@ -814,17 +825,14 @@ export default function Home() {
         currentResponseController.current.abort();
       }
 
-      // Send a stop request to the server
       await fetch("/api/agent/stop", {
         method: "POST",
       });
 
-      // Clean up UI state
       setIsWaitingForResponse(false);
       setIsTyping(false);
       setShowSpinner(false);
 
-      // Add a message showing the response was stopped
       setMessages((prev) => [
         ...prev,
         {
@@ -841,9 +849,11 @@ export default function Home() {
   };
 
   const sendMessage = async (msg: string) => {
+    if (messages.length === 0 && useLiteOnFirst) {
+      setModes((prev) => ({ ...prev, lite: true }));
+    }
     if (!msg.trim() || isWaitingForResponse) return;
 
-    // Add user message to the *current* conversation's messages
     const userMessageId = Date.now().toString();
     const userMessage: MessageType = {
       id: userMessageId,
@@ -851,10 +861,8 @@ export default function Home() {
       sender: "user",
     };
 
-    // Update messages state for the active conversation
     setMessages((prev) => [...prev, userMessage]);
 
-    // If this is the first message of a new chat, update history title
     if (messages.length === 0 && activeConversationId) {
       setConversationHistory((prevHistory) =>
         prevHistory.map((conv) =>
@@ -880,7 +888,6 @@ export default function Home() {
       setChatOpacity(1);
     }, 250);
 
-    // Prepare conversation history for the API call
     const conversationMessages = messages
       .concat(userMessage)
       .map((msg) => {
@@ -889,29 +896,24 @@ export default function Home() {
         } else if (msg.sender === "agent") {
           return { role: "assistant", content: msg.text };
         } else {
-          // Skip function messages as they're handled differently
           return null;
         }
       })
-      .filter(Boolean); // Remove nulls
+      .filter(Boolean);
 
     try {
-      // Create an AbortController for this request
       currentResponseController.current = new AbortController();
       const signal = currentResponseController.current.signal;
 
-      // Determine which API endpoint to call based on lite mode
       const apiEndpoint = modes.lite
         ? "/api/agent/lite/responses"
         : "/api/agent/responses";
 
-      // Prepare the request body
       const requestBody: any = {
         messages: conversationMessages,
         jdiMode: modes.jdi,
       };
 
-      // Add reason and search modes if not in lite mode
       if (!modes.lite) {
         requestBody.reason = modes.reason;
         requestBody.search = modes.search;
@@ -919,11 +921,10 @@ export default function Home() {
           uploadedFileIds.length > 0 ? uploadedFileIds : [];
       }
 
-      // Call the appropriate agent API with streaming response handling
       const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody), // Use the prepared request body
+        body: JSON.stringify(requestBody),
         signal,
       });
 
@@ -931,7 +932,6 @@ export default function Home() {
         throw new Error(`API call failed with status: ${response.status}`);
       }
 
-      // Process the streaming response
       const reader = response.body?.getReader();
       if (!reader) {
         throw new Error("Response body is null");
@@ -952,18 +952,16 @@ export default function Home() {
 
           if (done) break;
 
-          // Decode and add to the buffer
           const text = new TextDecoder().decode(value);
           buffer += text;
 
-          // Process complete events in the buffer
           let boundary = buffer.indexOf("\n\n");
           while (boundary !== -1) {
             const eventString = buffer.substring(0, boundary);
-            buffer = buffer.substring(boundary + 2); // Skip the '\n\n'
+            buffer = buffer.substring(boundary + 2);
 
             if (eventString.startsWith("data: ")) {
-              const eventData = eventString.substring(6); // Skip "data: "
+              const eventData = eventString.substring(6);
               try {
                 const data = JSON.parse(eventData);
 
@@ -999,7 +997,7 @@ export default function Home() {
                   }
 
                   responseText = messageText;
-                  const calculatedDelay = calculateShowAfterMs(responseText); // Calculate delay here
+                  const calculatedDelay = calculateShowAfterMs(responseText);
 
                   if (!agentMessageAdded) {
                     setMessages((prev) => [
@@ -1008,7 +1006,7 @@ export default function Home() {
                         id: agentMessageId,
                         text: messageText,
                         sender: "agent",
-                        calculatedShowAfterMs: calculatedDelay, // Store calculated delay
+                        calculatedShowAfterMs: calculatedDelay,
                       },
                     ]);
                     agentMessageAdded = true;
@@ -1020,13 +1018,12 @@ export default function Home() {
                               ...m,
                               text: messageText,
                               calculatedShowAfterMs: calculatedDelay,
-                            } // Update calculated delay
+                            }
                           : m
                       )
                     );
                   }
                 } else if (data.type === "function" && !modes.lite) {
-                  // Only process function calls when not in lite mode
                   if (isTyping) {
                     setIsTyping(false);
                   }
@@ -1040,7 +1037,6 @@ export default function Home() {
                   functionCalls.push(funcCall);
                   setMessages((prev) => [...prev, funcCall]);
                 } else if (data.type === "functionResult" && !modes.lite) {
-                  // Only process function results when not in lite mode
                   if (functionCalls.length > 0) {
                     const lastFuncCall =
                       functionCalls[functionCalls.length - 1];
@@ -1074,7 +1070,6 @@ export default function Home() {
                   }
                   setShowSpinner(false);
 
-                  // Final update for the last agent message to ensure isComplete is true for MessageActionButtons
                   if (agentMessageAdded) {
                     setMessages((prev) =>
                       prev.map((m) =>
@@ -1094,7 +1089,6 @@ export default function Home() {
           }
         }
         setShowSpinner(false);
-        // Final update after stream ends to ensure isComplete is true for MessageActionButtons
         if (agentMessageAdded) {
           setMessages((prev) =>
             prev.map((m) => (m.id === agentMessageId ? { ...m } : m))
@@ -1103,7 +1097,6 @@ export default function Home() {
       };
 
       processEvents().catch((error) => {
-        // Don't show error if it was due to an abort
         if (error.name === "AbortError") {
           console.log("Request was aborted");
           return;
@@ -1125,7 +1118,6 @@ export default function Home() {
         ]);
       });
     } catch (error) {
-      // Don't show error if it was due to an abort
       if (error instanceof Error && error.name === "AbortError") {
         console.log("Request was aborted");
         return;
@@ -1153,29 +1145,23 @@ export default function Home() {
       const newState = { ...prev };
 
       if (mode === "lite") {
-        // Toggle lite mode
         newState.lite = !prev.lite;
-        // If lite is turned on, turn off search and reason
         if (newState.lite) {
           newState.search = false;
           newState.reason = false;
         }
       } else if (mode === "reason") {
-        // Toggle reason mode (only if not in lite mode)
         if (!prev.lite) {
           newState.reason = !prev.reason;
-          // If reason is turned on, turn off search
           if (newState.reason) {
             newState.search = false;
           }
         }
       } else if (mode === "search") {
-        // Toggle search mode (only if not in lite mode AND reason is off)
         if (!prev.lite && !prev.reason) {
           newState.search = !prev.search;
         }
       } else if (mode === "jdi") {
-        // Toggle JDI mode (no dependencies)
         newState.jdi = !prev.jdi;
       }
 
@@ -1183,23 +1169,21 @@ export default function Home() {
     });
   };
 
-  // Handlers for Sidebar
   const handleNewChat = () => {
     const newConversationId = `conv-${Date.now()}`;
     const newConversation: Conversation = {
       id: newConversationId,
-      title: "New Chat", // Temporary title
+      title: "New Chat",
       date: new Date(),
       messages: [],
     };
     setConversationHistory((prev) => [...prev, newConversation]);
     setActiveConversationId(newConversationId);
-    setMessages([]); // Clear messages for the new chat
-    setShowChat(false); // Show welcome instead of chat
+    setMessages([]);
+    setShowChat(false);
     setWelcomeOpacity(1);
     setChatOpacity(0);
-    setInputValue(""); // Clear input field
-    // TODO: Maybe focus input field here
+    setInputValue("");
   };
 
   const handleSelectConversation = (id: string) => {
@@ -1207,18 +1191,16 @@ export default function Home() {
     if (selectedConv) {
       setActiveConversationId(id);
       setMessages(selectedConv.messages);
-      setShowChat(true); // Ensure chat view is shown
+      setShowChat(true);
       setWelcomeOpacity(0);
       setChatOpacity(1);
     }
   };
 
-  // Add function to navigate to library
   const navigateToLibrary = () => {
     router.push("/library");
   };
 
-  // Add functions to handle authentication modal visibility
   const handleLoginClick = () => {
     setShowLoginModal(true);
     setShowSignupModal(false);
@@ -1244,17 +1226,60 @@ export default function Home() {
       <Sidebar
         isCollapsed={isCollapsed}
         toggleSidebar={() => setIsCollapsed((prev) => !prev)}
-        conversationHistory={conversationHistory} // Pass state variable
-        recentDocuments={recentDocuments} // Pass state variable (placeholder)
-        onNewChat={handleNewChat} // Pass handler
-        onSelectConversation={handleSelectConversation} // Pass handler
-        activeConversationId={activeConversationId} // Pass active ID for highlighting
+        conversationHistory={conversationHistory}
+        recentDocuments={recentDocuments}
+        onNewChat={handleNewChat}
+        onSelectConversation={handleSelectConversation}
+        activeConversationId={activeConversationId}
         onOpenLibrary={navigateToLibrary}
         onLoginClick={handleLoginClick}
         onSignupClick={handleSignupClick}
       />
       <div className="flex-1 flex flex-col relative">
-        {!showChat ? (
+        {showImproveBRS ? (
+          <div className="flex-1 flex flex-col p-8">
+            <h1 className="text-3xl font-bold text-[#1A479D] mb-2">Improve BRS</h1>
+            <p className="text-gray-500 mb-8">
+              Upload your existing BRS document to enhance it. Our AI will help make it more concise,
+              add missing details, fix inconsistencies, and improve clarity throughout the document.
+            </p>
+            
+            <div 
+              className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-[#1A479D] transition-colors cursor-pointer"
+              onClick={() => {
+                const fileInput = document.getElementById("improve-brs-file-input") as HTMLInputElement | null;
+                if (fileInput) fileInput.click();
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.add("border-[#1A479D]", "bg-blue-50");
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
+                handleImproveBRSFileUpload(e.dataTransfer.files);
+              }}
+            >
+              <UploadIcon className="w-20 h-20 text-gray-400 mb-6" />
+              <h2 className="text-xl font-semibold text-gray-700 mb-2">Drag & Drop your BRS file here</h2>
+              <p className="text-gray-500 mb-6">Or click to browse files</p>
+              <button className="px-6 py-3 bg-[#1A479D] text-white rounded-lg hover:bg-[#15387d] transition-colors">
+                Select File
+              </button>
+              <input 
+                id="improve-brs-file-input" 
+                type="file" 
+                accept=".doc,.docx,.pdf,.txt,.md" 
+                className="hidden"
+                onChange={(e) => handleImproveBRSFileUpload(e.target.files)}
+              />
+            </div>
+          </div>
+        ) : !showChat ? (
           <main
             className="flex-1 flex flex-col items-center justify-center"
             style={{
@@ -1262,7 +1287,7 @@ export default function Home() {
               transition: "opacity 0.3s ease-out",
             }}
           >
-            <div className="w-full max-w-2xl flex flex-col items-center px-4">
+            <div className="w-full max-w-2xl flex flex-col items-center px-4 animate-element">
               <div className="mb-3 w-32 h-32 relative">
                 <Image
                   src="/finac-logo.png"
@@ -1309,14 +1334,12 @@ export default function Home() {
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
                   <div className="flex flex-col gap-6 mb-8">
-                    {/* Render messages from the active conversation's state */}
                     {messages.map((msg, index) => (
                       <MessageItem
-                        key={msg.id} // Use message ID as key
+                        key={msg.id}
                         msg={msg}
                         index={index}
                         isWaitingForResponse={isWaitingForResponse}
-                        // Pass isLastMessage based on the current 'messages' state array
                         isLastMessage={index === messages.length - 1}
                       />
                     ))}
@@ -1353,7 +1376,7 @@ export default function Home() {
                     <InputBox
                       inputValue={inputValue}
                       setInputValue={setInputValue}
-                      onSendMessage={sendMessage} // Use the main sendMessage
+                      onSendMessage={sendMessage}
                       onStopResponse={stopResponse}
                       placeholder="Type your next message here or drop files..."
                       showBottomSection={true}
@@ -1368,7 +1391,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        {!showChat && (
+        {!showChat && !showImproveBRS && (
           <footer
             className="p-4 text-center text-gray-500 text-sm"
             style={{
@@ -1389,8 +1412,78 @@ export default function Home() {
             </p>
           </footer>
         )}
+        
+        <div className="absolute top-4 right-4 flex items-center space-x-2 z-20">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button 
+                  className="p-2 rounded-full hover:bg-gray-100 cursor-pointer"
+                  onClick={() => setShowImproveBRS(prev => !prev)}
+                >
+                  <PaperclipIcon className="w-5 h-5 text-gray-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Improve BRS</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="p-2 rounded-full hover:bg-gray-100 cursor-pointer">
+                <BellIcon className="w-5 h-5 text-gray-600" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              {notifications.length > 0 ? (
+                notifications.map((note) => (
+                  <DropdownMenuItem
+                    key={note.id}
+                    className="text-sm cursor-pointer"
+                  >
+                    {note.text}
+                  </DropdownMenuItem>
+                ))
+              ) : (
+                <div className="px-4 py-2 text-sm text-gray-500">
+                  No notifications
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="p-2 rounded-full hover:bg-gray-100 cursor-pointer">
+                <SettingsIcon className="w-5 h-5 text-gray-600" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="bottom"
+              align="end"
+              sideOffset={8}
+              className="bg-white rounded-md shadow-lg p-2 min-w-[160px] -translate-x-3"
+            >
+              <label className="flex items-center cursor-pointer">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={useLiteOnFirst}
+                    onChange={() => setUseLiteOnFirst((prev) => !prev)}
+                  />
+                  <div className="w-11 h-6 ring-0 bg-gray-200 peer-focus:ring-0 peer-focus:ring-blue-300 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-none after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                </div>
+                <span className="ml-3 text-sm font-medium text-gray-900">
+                  Use lite mode on first chat message
+                </span>
+              </label>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-      {/* Add the authentication modals */}
       <AuthModals
         showLoginModal={showLoginModal}
         showSignupModal={showSignupModal}
