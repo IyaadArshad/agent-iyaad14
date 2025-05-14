@@ -668,6 +668,9 @@ export default function Home() {
   }, [useLiteOnFirst]);
 
   const [showImproveBRS, setShowImproveBRS] = useState(false);
+  const [isImprovingBRS, setIsImprovingBRS] = useState(false);
+  const [improveBRSStatus, setImproveBRSStatus] = useState<string | null>(null);
+  const [improveBRSError, setImproveBRSError] = useState<string | null>(null);
 
   useEffect(() => {
     const storedHistory = localStorage.getItem("conversationHistory");
@@ -791,27 +794,94 @@ export default function Home() {
 
   const handleImproveBRSFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    if (isImprovingBRS) return;
+
+    setIsImprovingBRS(true);
+    setImproveBRSStatus("Starting BRS improvement process...");
+    setImproveBRSError(null);
+
+    const file = files[0];
+
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/markdown",
+      "text/plain",
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      setImproveBRSError(
+        `Unsupported file type: ${file.type}. Please upload a PDF, DOCX, MD, or TXT file.`
+      );
+      setIsImprovingBRS(false);
+      setImproveBRSStatus(null);
+      return;
+    }
 
     try {
-      await uploadFiles(files);
-      const fileNames = Array.from(files)
-        .map((file) => file.name)
-        .join(", ");
-      setInputValue(
-        `I've uploaded ${fileNames}. Please improve this BRS document by making it more concise, fixing any inconsistencies, and adding necessary details where needed.`
-      );
-      setShowImproveBRS(false);
-      setShowChat(true);
-      setWelcomeOpacity(0);
-      setChatOpacity(1);
-      setTimeout(() => {
-        const inputElement = document.querySelector(
-          "textarea"
-        ) as HTMLTextAreaElement | null;
-        if (inputElement) inputElement.focus();
-      }, 100);
-    } catch (error) {
-      console.error("Error uploading files in Improve BRS mode:", error);
+      let markdownContent = "";
+      let originalFilename = file.name;
+
+      setImproveBRSStatus(`Processing ${originalFilename}...`);
+
+      if (file.type === "text/markdown" || file.type === "text/plain") {
+        markdownContent = await file.text();
+      } else {
+        setImproveBRSError(
+          `File type ${file.type} requires conversion to Markdown. This functionality is not yet fully implemented. Please upload a .md or .txt file.`
+        );
+        setIsImprovingBRS(false);
+        setImproveBRSStatus(null);
+        return;
+      }
+
+      setImproveBRSStatus("Analyzing BRS and generating improvements...");
+
+      const improveResponse = await fetch("/api/brs/improve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdownContent, originalFilename }),
+      });
+
+      if (!improveResponse.ok) {
+        const errorData = await improveResponse
+          .json()
+          .catch(() => ({ message: "Improvement process failed." }));
+        throw new Error(errorData.message || "Failed to improve BRS document.");
+      }
+
+      const improveResult = await improveResponse.json();
+
+      if (improveResult.success) {
+        setImproveBRSStatus(
+          `Successfully improved BRS! New document: ${improveResult.newDocumentName}. You will be redirected shortly.`
+        );
+        console.log("Improved BRS Result:", improveResult);
+        setTimeout(() => {
+          setShowImproveBRS(false);
+          setShowChat(true);
+          setWelcomeOpacity(0);
+          setChatOpacity(1);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `brs-improve-success-${Date.now()}`,
+              text: `Successfully improved BRS: **${improveResult.newDocumentName}**. It has been added to your library.`,
+              sender: "agent",
+            },
+          ]);
+          const recentDocs = getRecentDocuments();
+          setRecentDocuments(recentDocs);
+          setIsImprovingBRS(false);
+          setImproveBRSStatus(null);
+        }, 3000);
+      } else {
+        throw new Error(improveResult.message || "Improvement process failed.");
+      }
+    } catch (error: any) {
+      console.error("Error in Improve BRS flow:", error);
+      setImproveBRSError(`Error: ${error.message}`);
+      setImproveBRSStatus(null);
+      setIsImprovingBRS(false);
     }
   };
 
@@ -1245,39 +1315,59 @@ export default function Home() {
             </p>
             
             <div 
-              className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-[#1A479D] transition-colors cursor-pointer"
+              className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 transition-colors cursor-pointer ${isImprovingBRS ? 'bg-gray-100 cursor-not-allowed' : 'hover:border-[#1A479D] hover:bg-blue-50'}`}
               onClick={() => {
+                if (isImprovingBRS) return; 
                 const fileInput = document.getElementById("improve-brs-file-input") as HTMLInputElement | null;
                 if (fileInput) fileInput.click();
               }}
               onDragOver={(e) => {
                 e.preventDefault();
+                if (isImprovingBRS) return;
                 e.currentTarget.classList.add("border-[#1A479D]", "bg-blue-50");
               }}
               onDragLeave={(e) => {
                 e.preventDefault();
+                if (isImprovingBRS) return;
                 e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
               }}
               onDrop={(e) => {
                 e.preventDefault();
+                if (isImprovingBRS) return;
                 e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
                 handleImproveBRSFileUpload(e.dataTransfer.files);
               }}
             >
-              <UploadIcon className="w-20 h-20 text-gray-400 mb-6" />
-              <h2 className="text-xl font-semibold text-gray-700 mb-2">Drag & Drop your BRS file here</h2>
-              <p className="text-gray-500 mb-6">Or click to browse files</p>
-              <button className="px-6 py-3 bg-[#1A479D] text-white rounded-lg hover:bg-[#15387d] transition-colors">
-                Select File
-              </button>
+              {isImprovingBRS ? (
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-t-2 border-[#1A479D] mx-auto mb-4"></div>
+                  <p className="text-lg font-semibold text-[#1A479D]">Improving BRS...</p>
+                  {improveBRSStatus && <p className="text-sm text-gray-600 mt-2">{improveBRSStatus}</p>}
+                </div>
+              ) : (
+                <>
+                  <UploadIcon className="w-20 h-20 text-gray-400 mb-6" />
+                  <h2 className="text-xl font-semibold text-gray-700 mb-2">Drag & Drop your BRS file here</h2>
+                  <p className="text-gray-500 mb-6">Or click to browse files (PDF, DOCX, MD, TXT)</p>
+                  <button className="px-6 py-3 bg-[#1A479D] text-white rounded-lg hover:bg-[#15387d] transition-colors">
+                    Select File
+                  </button>
+                </>
+              )}
               <input 
                 id="improve-brs-file-input" 
                 type="file" 
-                accept=".doc,.docx,.pdf,.txt,.md" 
+                accept=".pdf,.docx,.md,.txt" 
                 className="hidden"
                 onChange={(e) => handleImproveBRSFileUpload(e.target.files)}
+                disabled={isImprovingBRS}
               />
             </div>
+            {improveBRSError && !isImprovingBRS && (
+              <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
+                {improveBRSError}
+              </div>
+            )}
           </div>
         ) : !showChat ? (
           <main
