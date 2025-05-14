@@ -42,7 +42,6 @@ async function callOpenAI(
     }
 
     const completion = await openai.chat.completions.create(params);
-    console.log(completion)
     return completion.choices[0].message?.content ?? null;
   } catch (err) {
     const error = err as OpenAIError;
@@ -55,12 +54,12 @@ async function callOpenAI(
 // System Prompts
 const SYSTEM_PROMPT_OVERVIEW = `You are an expert Business Requirements Specification (BRS) engineer. You will be provided with a raw BRS document in Markdown. Your task is to generate an in-depth, step-by-step implementation overview that uncovers and maps every aspect of the submitted document.
 
-1. Begin with a single first-person sentence under 30 words: “I’ll generate a comprehensive implementation plan for improving this BRS document,” and nothing else on that line.
+1. Begin with a single first-person sentence under 30 words: "I'll generate a comprehensive implementation plan for improving this BRS document," and nothing else on that line.
 
 2. Analyze the full document structure: detect all H1 modules, H2 screen sections, sub-screens, lists, tables, calculations, functions, and notes.
 
-3. Provide a header “Step-by-step changes:” then a concise paragraph stating you will list concrete actions. Below, produce a numbered list of 10–14 items where each step:
-   a. References exact document elements (e.g., specific H1 module titles like “STOCK & SALES MODULE,” H2 sections such as “Common,” “Master Files,” “Transaction,” etc.).
+3. Provide a header "Step-by-step changes:" then a concise paragraph stating you will list concrete actions. Below, produce a numbered list of 10–14 items where each step:
+   a. References exact document elements (e.g., specific H1 module titles like "STOCK & SALES MODULE," H2 sections such as "Common," "Master Files," "Transaction," etc.).
    b. Identifies any missing or implicit screens, modules, calculations, or functions and instructs where to add or refine them.
    c. Describes structural improvements: adding or restructuring headings (H1, H2, H3) to accurately represent screens and nested contexts.
    d. Specifies where to enhance content: refine descriptive paragraphs, enforce bullet and table standards (minimum 7 rows), ensure sample data is meaningful.
@@ -122,30 +121,122 @@ The final BRS must be:
 Output ONLY the improved BRS document in Markdown format. Do not include any additional text, preambles, summaries, or explanations outside of the Markdown document itself.
 `;
 
+// Progress tracking interface for client feedback
+interface ProgressUpdate {
+  stepId: string;
+  status: 'started' | 'completed' | 'failed';
+  message: string;
+  timestamp: number;
+}
+
 export async function POST(request: NextRequest) {
+  // Track improvement process steps
+  const progress: ProgressUpdate[] = [];
+  
+  const addProgress = (stepId: string, status: 'started' | 'completed' | 'failed', message: string) => {
+    progress.push({ 
+      stepId, 
+      status, 
+      message, 
+      timestamp: Date.now() 
+    });
+    console.log(`BRS Improve [${stepId}] ${status}: ${message}`);
+  };
+
   try {
-    const body = await request.json();
-    const { markdownContent, originalFilename } = body;
-
-    if (!markdownContent || typeof markdownContent !== 'string') {
-      return NextResponse.json({ success: false, message: 'Markdown content is required and must be a string.' }, { status: 400 });
+    // Check if this is a form submission (PDF) or JSON (markdown directly)
+    let markdownContent: string;
+    let originalFilename: string;
+    const contentType = request.headers.get('content-type') || '';
+    
+    // Handle PDF upload case
+    if (contentType.includes('multipart/form-data')) {
+      addProgress('upload', 'started', 'Processing PDF document upload');
+      
+      const formData = await request.formData();
+      const pdfFile = formData.get('file') as File | null;
+      
+      if (!pdfFile) {
+        return NextResponse.json({ 
+          success: false, 
+          message: 'No PDF file provided' 
+        }, { status: 400 });
+      }
+      
+      // Convert PDF to markdown using the pdf-converter endpoint
+      addProgress('convert', 'started', 'Converting PDF to Markdown format');
+      
+      const pdfFormData = new FormData();
+      pdfFormData.append('file', pdfFile);
+      
+      const pdfConverterResponse = await fetch(`${API_BASE_URL}/api/brs/pdf-converter`, {
+        method: 'POST',
+        body: pdfFormData
+      });
+      
+      if (!pdfConverterResponse.ok) {
+        const errorData = await pdfConverterResponse.json();
+        addProgress('convert', 'failed', `PDF conversion failed: ${errorData.message}`);
+        return NextResponse.json({ 
+          success: false, 
+          message: `Failed to convert PDF: ${errorData.message}`,
+          progress
+        }, { status: 500 });
+      }
+      
+      const pdfConverterResult = await pdfConverterResponse.json();
+      markdownContent = pdfConverterResult.markdownContent;
+      originalFilename = pdfConverterResult.originalFilename;
+      
+      addProgress('convert', 'completed', 'PDF successfully converted to Markdown');
+      addProgress('upload', 'completed', 'Document successfully uploaded and processed');
+    } 
+    // Handle direct markdown submission
+    else {
+      addProgress('upload', 'started', 'Processing Markdown document');
+      const body = await request.json();
+      markdownContent = body.markdownContent;
+      originalFilename = body.originalFilename;
+      
+      if (!markdownContent || typeof markdownContent !== 'string') {
+        return NextResponse.json({ 
+          success: false, 
+          message: 'Markdown content is required and must be a string.',
+          progress 
+        }, { status: 400 });
+      }
+      if (!originalFilename || typeof originalFilename !== 'string') {
+        return NextResponse.json({ 
+          success: false, 
+          message: 'Original filename is required and must be a string.',
+          progress
+        }, { status: 400 });
+      }
+      addProgress('upload', 'completed', 'Document successfully uploaded and processed');
     }
-    if (!originalFilename || typeof originalFilename !== 'string') {
-      return NextResponse.json({ success: false, message: 'Original filename is required and must be a string.' }, { status: 400 });
-    }
 
+    addProgress('analyze', 'started', 'Analyzing document structure');
     console.log(`BRS Improve: Starting process for "${originalFilename}"`);
 
     // 1. Generate Implementation Overview
+    addProgress('overview', 'started', 'Generating implementation overview');
     console.log('BRS Improve: Generating implementation overview...');
     const overviewContent = await callOpenAI('o4-mini', SYSTEM_PROMPT_OVERVIEW, markdownContent);
     if (!overviewContent) {
+      addProgress('overview', 'failed', 'Failed to generate implementation overview');
       console.error('BRS Improve: Failed to generate implementation overview.');
-      return NextResponse.json({ success: false, message: 'Failed to generate implementation overview.' }, { status: 500 });
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Failed to generate implementation overview.',
+        progress
+      }, { status: 500 });
     }
+    addProgress('overview', 'completed', 'Implementation overview generated successfully');
+    addProgress('analyze', 'completed', 'Document structure analyzed completely');
     console.log('BRS Improve: Overview generated.');
 
     // 2. Generate Filename
+    addProgress('filename', 'started', 'Generating document identifier');
     console.log('BRS Improve: Generating filename...');
     const filenamePromptContent = `Original filename: ${originalFilename}\nBRS Content Summary (first 500 chars):\n${markdownContent.substring(0, 500)}`;
     const nanoResponseJson = await callOpenAI('gpt-4.1-nano', SYSTEM_PROMPT_FILENAME_NANO, filenamePromptContent, true);
@@ -175,6 +266,7 @@ export async function POST(request: NextRequest) {
       suggestedTitle = `improved-brs-${Date.now()}`.replace(/[^a-z0-9-]/g, '');
     }
     let finalFilename = `${suggestedTitle}.md`;
+    addProgress('filename', 'completed', `Document identifier created: ${suggestedTitle}`);
     console.log(`BRS Improve: Filename generated: "${finalFilename}"`);
 
     // 3. Create File Record
@@ -189,7 +281,11 @@ export async function POST(request: NextRequest) {
     if (!createFileResponse.ok) {
         const errorData = await createFileResponse.json().catch(() => ({ message: createFileResponse.statusText }));
         console.error('BRS Improve: Failed to create file record:', errorData);
-        return NextResponse.json({ success: false, message: `Failed to create file record: ${errorData.message}` }, { status: createFileResponse.status });
+        return NextResponse.json({ 
+          success: false, 
+          message: `Failed to create file record: ${errorData.message}`,
+          progress
+        }, { status: createFileResponse.status });
     }
     const createFileResult = await createFileResponse.json();
     // Initialize fileId from initial create response
@@ -242,11 +338,19 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
       });
       if (!retryResponse.ok) {
         const retryErr = await retryResponse.json().catch(() => ({}));
-        return NextResponse.json({ success: false, message: `Retry create file failed: ${retryErr.message}` }, { status: retryResponse.status });
+        return NextResponse.json({ 
+          success: false, 
+          message: `Retry create file failed: ${retryErr.message}`,
+          progress
+        }, { status: retryResponse.status });
       }
       const retryResult = await retryResponse.json();
       if (!retryResult.file_name) {
-        return NextResponse.json({ success: false, message: 'Filename retry did not return a valid name.' }, { status: 500 });
+        return NextResponse.json({ 
+          success: false, 
+          message: 'Filename retry did not return a valid name.',
+          progress
+        }, { status: 500 });
       }
       fileId = retryResult.file_name;
       console.log(`BRS Improve: File record created with new name: ${fileId}`);
@@ -255,21 +359,33 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
     // Original path if no collision or after retry
     if (!fileId) {
       console.error('BRS Improve: File name not returned in create file response:', createFileResult);
-      return NextResponse.json({ success: false, message: 'Failed to get file identifier after file creation.' }, { status: 500 });
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Failed to get file identifier after file creation.',
+        progress
+      }, { status: 500 });
     }
     console.log(`BRS Improve: File record created with name: ${fileId}`);
 
     // 4. Generate Improved BRS Content
+    addProgress('improve', 'started', 'Enhancing BRS content based on implementation plan');
     console.log('BRS Improve: Generating improved BRS content...');
     const improvePrompt = `Original BRS Markdown (might be partial or rough):\n\n${markdownContent}\n\nStrictly follow this Implementation Overview to improve the BRS:\n\n${overviewContent}`;
     const improvedBrsContent = await callOpenAI('gpt-4o', SYSTEM_PROMPT_IMPROVE_BRS, improvePrompt);
     if (!improvedBrsContent) {
+      addProgress('improve', 'failed', 'Failed to generate improved BRS content');
       console.error('BRS Improve: Failed to generate improved BRS content.');
-      return NextResponse.json({ success: false, message: 'Failed to generate improved BRS content.' }, { status: 500 });
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Failed to generate improved BRS content.',
+        progress
+      }, { status: 500 });
     }
+    addProgress('improve', 'completed', 'BRS content enhanced successfully');
     console.log('BRS Improve: Improved BRS content generated.');
 
     // 5. Save Improved BRS Content
+    addProgress('save', 'started', 'Saving improved document');
     console.log('BRS Improve: Saving improved BRS content...');
     // The API /api/files/writeInitialData expects { file_name, data }
     const writeDataPayload = { file_name: finalFilename, data: improvedBrsContent };
@@ -281,17 +397,62 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
 
     if (!writeDataResponse.ok) {
         const errorData = await writeDataResponse.json().catch(() => ({ message: writeDataResponse.statusText }));
+        addProgress('save', 'failed', `Failed to save document: ${errorData.message}`);
         console.error('BRS Improve: Failed to write initial data for improved BRS:', errorData);
-        return NextResponse.json({ success: false, message: `Failed to save improved BRS content: ${errorData.message}` }, { status: writeDataResponse.status });
+        return NextResponse.json({ 
+          success: false, 
+          message: `Failed to save improved BRS content: ${errorData.message}`,
+          progress
+        }, { status: writeDataResponse.status });
     }
     const writeDataResult = await writeDataResponse.json();
+    addProgress('save', 'completed', 'Document saved successfully');
     console.log('BRS Improve: Improved BRS content saved.', writeDataResult);
+    
+    // 6. Save conversation record of this improvement
+    try {
+      const conversationTitle = `BRS Improvement: ${suggestedTitle}`;
+      const conversationPayload = {
+        title: conversationTitle,
+        messages: [
+          {
+            sender: 'user',
+            text: `Improve my BRS document: ${originalFilename}`
+          },
+          {
+            sender: 'agent',
+            text: `Successfully improved your BRS document. The new document is available as ${finalFilename}.
+            
+Here's what I did:
+1. Analyzed your document structure
+2. Created an implementation plan
+3. Enhanced the content following BRS best practices
+4. Added more detailed specifications for each module
+5. Structured all sections consistently
+
+You can view the improved document in the document library.`
+          }
+        ]
+      };
+      
+      await fetch(`${API_BASE_URL}/api/conversations/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conversationPayload)
+      });
+      
+      console.log('BRS Improve: Conversation record saved for this improvement.');
+    } catch (e) {
+      // Non-critical error, just log it
+      console.error('BRS Improve: Failed to save conversation record:', e);
+    }
 
     return NextResponse.json({
       success: true,
       message: 'BRS improved successfully.',
       newDocumentName: finalFilename,
       newDocumentId: fileId,
+      progress,
       // For debugging or client use, you might include these:
       // overview: overviewContent,
       // generatedContentLength: improvedBrsContent.length
@@ -303,6 +464,10 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
     if (error.message.includes('OpenAI API call failed')) {
         message = error.message; // Propagate OpenAI specific errors
     }
-    return NextResponse.json({ success: false, message }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message,
+      progress
+    }, { status: 500 });
   }
 }

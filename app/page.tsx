@@ -38,6 +38,9 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
+import { useBRSProgress } from "./components/BRSProgress";
+import BRSFileUpload from "./components/BRSFileUpload";
+import ErrorAlert from "./components/ErrorAlert";
 
 type MessageType = {
   id: string;
@@ -669,8 +672,17 @@ export default function Home() {
 
   const [showImproveBRS, setShowImproveBRS] = useState(false);
   const [isImprovingBRS, setIsImprovingBRS] = useState(false);
-  const [improveBRSStatus, setImproveBRSStatus] = useState<string | null>(null);
   const [improveBRSError, setImproveBRSError] = useState<string | null>(null);
+
+  const {
+    steps,
+    currentStepId,
+    startStep,
+    completeStep,
+    failStep,
+    resetProgress,
+    progressTracker,
+  } = useBRSProgress();
 
   useEffect(() => {
     const storedHistory = localStorage.getItem("conversationHistory");
@@ -792,96 +804,146 @@ export default function Home() {
     }
   };
 
-  const handleImproveBRSFileUpload = async (files: FileList | null) => {
+  const handleImproveBRSFileUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
     if (isImprovingBRS) return;
 
     setIsImprovingBRS(true);
-    setImproveBRSStatus("Starting BRS improvement process...");
     setImproveBRSError(null);
+    resetProgress();
 
     const file = files[0];
+    startStep("upload");
 
     const allowedTypes = [
       "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/markdown",
       "text/plain",
     ];
-    if (!allowedTypes.includes(file.type)) {
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      failStep("upload");
       setImproveBRSError(
-        `Unsupported file type: ${file.type}. Please upload a PDF, DOCX, MD, or TXT file.`
+        `File size exceeds the 10MB limit. Please upload a smaller file.`
       );
       setIsImprovingBRS(false);
-      setImproveBRSStatus(null);
+      return;
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      failStep("upload");
+      setImproveBRSError(
+        `Unsupported file type: ${file.type}. Please upload a PDF, MD, or TXT file.`
+      );
+      setIsImprovingBRS(false);
       return;
     }
 
     try {
-      let markdownContent = "";
       let originalFilename = file.name;
+      completeStep("upload");
 
-      setImproveBRSStatus(`Processing ${originalFilename}...`);
+      if (file.type === "application/pdf") {
+        startStep("convert");
+        // Handle PDF - send directly to improve API with FormData
+        const formData = new FormData();
+        formData.append("file", file);
 
-      if (file.type === "text/markdown" || file.type === "text/plain") {
-        markdownContent = await file.text();
-      } else {
-        setImproveBRSError(
-          `File type ${file.type} requires conversion to Markdown. This functionality is not yet fully implemented. Please upload a .md or .txt file.`
-        );
-        setIsImprovingBRS(false);
-        setImproveBRSStatus(null);
-        return;
+        const improveResponse = await fetch("/api/brs/improve", {
+          method: "POST",
+          body: formData,
+        });
+
+        const handleResult = await processImproveResult(improveResponse);
+        if (!handleResult) {
+          throw new Error("Failed to process BRS improvement from PDF");
+        }
+      } else if (file.type === "text/markdown" || file.type === "text/plain") {
+        // Handle text files - convert to markdown if needed
+        startStep("analyze");
+        const markdownContent = await file.text();
+
+        // Send to improve API as JSON
+        const improveResponse = await fetch("/api/brs/improve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ markdownContent, originalFilename }),
+        });
+
+        const handleResult = await processImproveResult(improveResponse);
+        if (!handleResult) {
+          throw new Error("Failed to process BRS improvement");
+        }
       }
 
-      setImproveBRSStatus("Analyzing BRS and generating improvements...");
-
-      const improveResponse = await fetch("/api/brs/improve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markdownContent, originalFilename }),
-      });
-
-      if (!improveResponse.ok) {
-        const errorData = await improveResponse
-          .json()
-          .catch(() => ({ message: "Improvement process failed." }));
-        throw new Error(errorData.message || "Failed to improve BRS document.");
-      }
-
-      const improveResult = await improveResponse.json();
-
-      if (improveResult.success) {
-        setImproveBRSStatus(
-          `Successfully improved BRS! New document: ${improveResult.newDocumentName}. You will be redirected shortly.`
-        );
-        console.log("Improved BRS Result:", improveResult);
-        setTimeout(() => {
-          setShowImproveBRS(false);
-          setShowChat(true);
-          setWelcomeOpacity(0);
-          setChatOpacity(1);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `brs-improve-success-${Date.now()}`,
-              text: `Successfully improved BRS: **${improveResult.newDocumentName}**. It has been added to your library.`,
-              sender: "agent",
-            },
-          ]);
-          const recentDocs = getRecentDocuments();
-          setRecentDocuments(recentDocs);
-          setIsImprovingBRS(false);
-          setImproveBRSStatus(null);
-        }, 3000);
-      } else {
-        throw new Error(improveResult.message || "Improvement process failed.");
-      }
     } catch (error: any) {
       console.error("Error in Improve BRS flow:", error);
       setImproveBRSError(`Error: ${error.message}`);
-      setImproveBRSStatus(null);
       setIsImprovingBRS(false);
+
+      // Mark current step as failed
+      if (currentStepId) {
+        failStep(currentStepId);
+      }
+    }
+  };
+
+  const processImproveResult = async (response: Response): Promise<boolean> => {
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Improvement process failed.", progress: [] }));
+
+      if (errorData.progress && Array.isArray(errorData.progress)) {
+        errorData.progress.forEach((p: any) => {
+          if (p.status === "started") startStep(p.stepId);
+          else if (p.status === "completed") completeStep(p.stepId);
+          else if (p.status === "failed") failStep(p.stepId);
+        });
+      }
+
+      throw new Error(errorData.message || "Failed to improve BRS document.");
+    }
+
+    const improveResult = await response.json();
+
+    if (improveResult.progress && Array.isArray(improveResult.progress)) {
+      improveResult.progress.forEach((p: any) => {
+        if (p.status === "started") startStep(p.stepId);
+        else if (p.status === "completed") completeStep(p.stepId);
+        else if (p.status === "failed") failStep(p.stepId);
+      });
+    } else {
+      completeStep("overview");
+      completeStep("filename");
+      completeStep("improve");
+      completeStep("save");
+    }
+
+    if (improveResult.success) {
+      setTimeout(() => {
+        setShowImproveBRS(false);
+        setShowChat(true);
+        setWelcomeOpacity(0);
+        setChatOpacity(1);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `brs-improve-success-${Date.now()}`,
+            text: `Successfully improved BRS: **${improveResult.newDocumentName}**. It has been added to your library.`,
+            sender: "agent",
+          },
+        ]);
+        const recentDocs = getRecentDocuments();
+        setRecentDocuments(recentDocs);
+        setIsImprovingBRS(false);
+        resetProgress();
+      }, 3000);
+
+      return true;
+    } else {
+      throw new Error(improveResult.message || "Improvement process failed.");
     }
   };
 
@@ -1306,68 +1368,81 @@ export default function Home() {
         onSignupClick={handleSignupClick}
       />
       <div className="flex-1 flex flex-col relative">
+        {progressTracker}
         {showImproveBRS ? (
-          <div className="flex-1 flex flex-col p-8">
-            <h1 className="text-3xl font-bold text-[#1A479D] mb-2">Improve BRS</h1>
-            <p className="text-gray-500 mb-8">
-              Upload your existing BRS document to enhance it. Our AI will help make it more concise,
-              add missing details, fix inconsistencies, and improve clarity throughout the document.
-            </p>
-            
-            <div 
-              className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 transition-colors cursor-pointer ${isImprovingBRS ? 'bg-gray-100 cursor-not-allowed' : 'hover:border-[#1A479D] hover:bg-blue-50'}`}
-              onClick={() => {
-                if (isImprovingBRS) return; 
-                const fileInput = document.getElementById("improve-brs-file-input") as HTMLInputElement | null;
-                if (fileInput) fileInput.click();
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (isImprovingBRS) return;
-                e.currentTarget.classList.add("border-[#1A479D]", "bg-blue-50");
-              }}
-              onDragLeave={(e) => {
-                e.preventDefault();
-                if (isImprovingBRS) return;
-                e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (isImprovingBRS) return;
-                e.currentTarget.classList.remove("border-[#1A479D]", "bg-blue-50");
-                handleImproveBRSFileUpload(e.dataTransfer.files);
-              }}
+          <div className="flex-1 flex flex-col p-8 bg-gradient-to-b from-white to-blue-50">
+            <button
+              onClick={() => setShowImproveBRS(false)}
+              className="self-start text-gray-500 hover:text-gray-700 mb-4 flex items-center"
             >
-              {isImprovingBRS ? (
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-t-2 border-[#1A479D] mx-auto mb-4"></div>
-                  <p className="text-lg font-semibold text-[#1A479D]">Improving BRS...</p>
-                  {improveBRSStatus && <p className="text-sm text-gray-600 mt-2">{improveBRSStatus}</p>}
-                </div>
-              ) : (
-                <>
-                  <UploadIcon className="w-20 h-20 text-gray-400 mb-6" />
-                  <h2 className="text-xl font-semibold text-gray-700 mb-2">Drag & Drop your BRS file here</h2>
-                  <p className="text-gray-500 mb-6">Or click to browse files (PDF, DOCX, MD, TXT)</p>
-                  <button className="px-6 py-3 bg-[#1A479D] text-white rounded-lg hover:bg-[#15387d] transition-colors">
-                    Select File
-                  </button>
-                </>
-              )}
-              <input 
-                id="improve-brs-file-input" 
-                type="file" 
-                accept=".pdf,.docx,.md,.txt" 
-                className="hidden"
-                onChange={(e) => handleImproveBRSFileUpload(e.target.files)}
-                disabled={isImprovingBRS}
-              />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 mr-1"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Back to chat
+            </button>
+
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-[#1A479D] mb-2">
+                Improve BRS Document
+              </h1>
+              <p className="text-gray-500 max-w-2xl mx-auto">
+                Upload your existing BRS document to enhance it. Our AI will
+                analyze the structure, add missing details, fix inconsistencies,
+                and improve clarity throughout the document.
+              </p>
             </div>
-            {improveBRSError && !isImprovingBRS && (
-              <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
-                {improveBRSError}
+
+            <div className="flex-1 flex flex-col items-center">
+              <ErrorAlert
+                message={improveBRSError}
+                onDismiss={() => setImproveBRSError(null)}
+              />
+
+              <BRSFileUpload
+                onFileSelect={handleImproveBRSFileUpload}
+                isLoading={isImprovingBRS}
+                errorMessage={null}
+              />
+
+              <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl w-full">
+                <h3 className="font-medium text-blue-700 mb-2 flex items-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 mr-1"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  About BRS Improvement
+                </h3>
+                <p className="text-sm text-blue-600">
+                  This feature analyzes your Business Requirement Specification
+                  and enhances it by:
+                </p>
+                <ul className="text-sm text-blue-600 list-disc pl-5 mt-2 space-y-1">
+                  <li>Adding proper structure with consistent headings</li>
+                  <li>Creating detailed screen specifications</li>
+                  <li>Adding visual diagrams where needed</li>
+                  <li>Ensuring complete input/output documentation</li>
+                  <li>Adding sample data tables with validation rules</li>
+                  <li>Organizing content for better readability</li>
+                </ul>
               </div>
-            )}
+            </div>
           </div>
         ) : !showChat ? (
           <main
@@ -1502,14 +1577,14 @@ export default function Home() {
             </p>
           </footer>
         )}
-        
+
         <div className="absolute top-4 right-4 flex items-center space-x-2 z-20">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button 
+                <button
                   className="p-2 rounded-full hover:bg-gray-100 cursor-pointer"
-                  onClick={() => setShowImproveBRS(prev => !prev)}
+                  onClick={() => setShowImproveBRS((prev) => !prev)}
                 >
                   <PaperclipIcon className="w-5 h-5 text-gray-600" />
                 </button>
@@ -1519,7 +1594,7 @@ export default function Home() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="p-2 rounded-full hover:bg-gray-100 cursor-pointer">
