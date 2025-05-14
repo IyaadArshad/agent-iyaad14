@@ -3,14 +3,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sidebar } from "@/components/Sidebar";
-import { 
-  ChevronLeft, 
-  Save, 
-  Edit2, 
-  Clock, 
+import {
+  ChevronLeft,
+  Save,
+  Edit2,
+  Clock,
   XCircle,
   CheckCircle,
-  ArrowLeft
+  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { addRecentDocument, RecentDocument } from "@/lib/utils";
@@ -39,7 +39,7 @@ export default function DocumentPage() {
   const router = useRouter();
   const params = useParams();
   const documentId = params.id as string;
-  
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [document, setDocument] = useState<Document | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
@@ -54,7 +54,7 @@ export default function DocumentPage() {
   const [conversationHistory, setConversationHistory] = useState([]);
   const [showVersionsPanel, setShowVersionsPanel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  
+
   // Refs for performance optimization
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -63,99 +63,113 @@ export default function DocumentPage() {
     const fetchDocument = async () => {
       setIsLoading(true);
       setLoadError(null);
-      
+
       // Cancel any ongoing requests when component unmounts or when documentId changes
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      
+
       abortControllerRef.current = new AbortController();
-      
+
       try {
         // Check session storage for cached document
         const cachedDoc = sessionStorage.getItem(`document_${documentId}`);
         if (cachedDoc) {
           const parsedDoc = JSON.parse(cachedDoc);
-          const cachedTimestamp = sessionStorage.getItem(`document_${documentId}_timestamp`);
-          
+          const cachedTimestamp = sessionStorage.getItem(
+            `document_${documentId}_timestamp`
+          );
+
           // Use cached document if it's less than 5 minutes old
-          if (cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < 300000) {
+          if (
+            cachedTimestamp &&
+            Date.now() - parseInt(cachedTimestamp) < 300000
+          ) {
             setDocument(parsedDoc.document);
             setVersions(parsedDoc.versions);
             setCurrentVersion(parsedDoc.currentVersion);
             setEditContent(parsedDoc.latestContent);
-            
+
             // Add to recent documents
             if (parsedDoc.document?.data) {
-              const docTitle = parsedDoc.document.data.name || parsedDoc.document.file_name;
+              const docTitle =
+                parsedDoc.document.data.name || parsedDoc.document.file_name;
               addToRecentDocuments(parsedDoc.document.id, docTitle);
             }
-            
+
             setIsLoading(false);
-            
+
             // Fetch in background for updates
             fetchFromAPI(true);
             return;
           }
         }
-        
+
         // No valid cache, fetch from API
         await fetchFromAPI(false);
-        
       } catch (error) {
         console.error("Error in document fetch flow:", error);
-        setLoadError(error instanceof Error ? error.message : "Failed to load document");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load document"
+        );
         setIsLoading(false);
       }
     };
-    
+
     // Separate function to fetch from API
     const fetchFromAPI = async (isBackgroundFetch: boolean) => {
       try {
         if (!isBackgroundFetch) {
           setIsLoading(true);
         }
-        
-        const response = await fetch(`https://database.acroford.com/files?id=eq.${documentId}`, {
-          headers: {
-            Accept: "application/json",
-          },
-          signal: abortControllerRef.current?.signal,
-        });
-        
+
+        const response = await fetch(
+          `https://database.acroford.com/files?id=eq.${documentId}`,
+          {
+            headers: {
+              Accept: "application/json",
+            },
+            signal: abortControllerRef.current?.signal,
+          }
+        );
+
         if (!response.ok) {
           throw new Error("Failed to fetch document");
         }
-        
+
         const data = await response.json();
         if (!data || data.length === 0) {
           throw new Error("Document not found");
         }
-        
+
         const doc = data[0];
         setDocument(doc);
-        
+
         // Process versions
         const fileData = doc.data || {};
         const latestVersion = fileData.latestVersion || 0;
         const versionsObj = fileData.versions || {};
-        
+
         const versionsArray: Version[] = Object.entries(versionsObj)
           .map(([key, value]) => ({
             versionNumber: parseInt(key),
-            content: typeof value === 'string' ? value : JSON.stringify(value),
+            content: typeof value === "string" ? value : JSON.stringify(value),
             // We don't have actual timestamps for versions, so this is a placeholder
-            timestamp: new Date(Date.now() - parseInt(key) * 86400000).toISOString(),
+            timestamp: new Date(
+              Date.now() - parseInt(key) * 86400000
+            ).toISOString(),
           }))
           .sort((a, b) => b.versionNumber - a.versionNumber);
-        
+
         setVersions(versionsArray);
         setCurrentVersion(latestVersion);
-        
+
         // Set edit content to the latest version
-        const latestContent = versionsArray.find(v => v.versionNumber === latestVersion)?.content || "";
+        const latestContent =
+          versionsArray.find((v) => v.versionNumber === latestVersion)
+            ?.content || "";
         setEditContent(latestContent);
-        
+
         // Cache the document data
         try {
           const cacheData = {
@@ -164,25 +178,33 @@ export default function DocumentPage() {
             currentVersion: latestVersion,
             latestContent,
           };
-          sessionStorage.setItem(`document_${documentId}`, JSON.stringify(cacheData));
-          sessionStorage.setItem(`document_${documentId}_timestamp`, Date.now().toString());
+          sessionStorage.setItem(
+            `document_${documentId}`,
+            JSON.stringify(cacheData)
+          );
+          sessionStorage.setItem(
+            `document_${documentId}_timestamp`,
+            Date.now().toString()
+          );
         } catch (e) {
           console.warn("Failed to cache document:", e);
         }
-        
+
         // Add document to recent documents
         if (doc.data) {
           const docTitle = doc.data.name || doc.file_name;
           addToRecentDocuments(doc.id, docTitle);
         }
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (error instanceof DOMException && error.name === "AbortError") {
           // Request was aborted, do nothing
           return;
         }
         console.error("Error fetching document:", error);
         if (!isBackgroundFetch) {
-          setLoadError(error instanceof Error ? error.message : "Failed to load document");
+          setLoadError(
+            error instanceof Error ? error.message : "Failed to load document"
+          );
         }
       } finally {
         if (!isBackgroundFetch) {
@@ -198,7 +220,7 @@ export default function DocumentPage() {
         if (storedHistory) {
           setConversationHistory(JSON.parse(storedHistory));
         }
-        
+
         const storedRecents = localStorage.getItem("recentDocuments");
         if (storedRecents) {
           setRecentDocuments(JSON.parse(storedRecents));
@@ -207,10 +229,10 @@ export default function DocumentPage() {
         console.error("Error loading user data:", error);
       }
     };
-    
+
     fetchDocument();
     loadUserData();
-    
+
     // Cleanup on unmount
     return () => {
       if (abortControllerRef.current) {
@@ -227,10 +249,10 @@ export default function DocumentPage() {
         name: title,
         lastOpened: new Date(),
       };
-      
+
       // Call the utility function to add to recent documents
       addRecentDocument(recentDoc);
-      
+
       // Update local state
       const storedRecents = localStorage.getItem("recentDocuments");
       if (storedRecents) {
@@ -242,21 +264,27 @@ export default function DocumentPage() {
   }, []);
 
   // Handle version selection - memoized
-  const handleVersionSelect = useCallback((versionNumber: number) => {
-    setCurrentVersion(versionNumber);
-    const versionContent = versions.find(v => v.versionNumber === versionNumber)?.content || "";
-    setEditContent(versionContent);
-    if (isEditing) {
-      setIsEditing(false);
-    }
-  }, [versions, isEditing]);
+  const handleVersionSelect = useCallback(
+    (versionNumber: number) => {
+      setCurrentVersion(versionNumber);
+      const versionContent =
+        versions.find((v) => v.versionNumber === versionNumber)?.content || "";
+      setEditContent(versionContent);
+      if (isEditing) {
+        setIsEditing(false);
+      }
+    },
+    [versions, isEditing]
+  );
 
   // Handle editing toggle - memoized
   const toggleEditing = useCallback(() => {
-    setIsEditing(prevState => {
+    setIsEditing((prevState) => {
       if (!prevState) {
         // When entering edit mode, set the content to the current version
-        const versionContent = versions.find(v => v.versionNumber === currentVersion)?.content || "";
+        const versionContent =
+          versions.find((v) => v.versionNumber === currentVersion)?.content ||
+          "";
         setEditContent(versionContent);
       }
       return !prevState;
@@ -266,14 +294,14 @@ export default function DocumentPage() {
   // Handle saving new version - memoized with optimistic updates
   const saveNewVersion = useCallback(async () => {
     if (!document || !currentVersion) return;
-    
+
     setIsSaving(true);
     setSaveError("");
     setSaveSuccess(false);
-    
+
     // Make a copy of the previous versions for rollback if needed
     const previousVersions = [...versions];
-    
+
     try {
       // Prepare the new version data
       const newVersionNumber = document.data.latestVersion + 1;
@@ -282,49 +310,52 @@ export default function DocumentPage() {
         latestVersion: newVersionNumber,
         versions: {
           ...document.data.versions,
-          [newVersionNumber]: editContent
-        }
+          [newVersionNumber]: editContent,
+        },
       };
-      
+
       // Optimistically update UI
       const newVersion: Version = {
         versionNumber: newVersionNumber,
         content: editContent,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-      
+
       setVersions([newVersion, ...versions]);
       setCurrentVersion(newVersionNumber);
-      
+
       // Update document in local state optimistically
       const optimisticDocument = {
         ...document,
-        data: updatedData
+        data: updatedData,
       };
       setDocument(optimisticDocument);
-      
+
       // Update the document in the database
-      const response = await fetch(`https://database.acroford.com/files?id=eq.${documentId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Prefer": "return=representation"
-        },
-        body: JSON.stringify({
-          data: updatedData,
-        })
-      });
-      
+      const response = await fetch(
+        `https://database.acroford.com/files?id=eq.${documentId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify({
+            data: updatedData,
+          }),
+        }
+      );
+
       if (!response.ok) {
         throw new Error("Failed to save document");
       }
-      
+
       // Update local state with server response
       const updatedDoc = await response.json();
       if (updatedDoc && updatedDoc[0]) {
         setDocument(updatedDoc[0]);
         setSaveSuccess(true);
-        
+
         // Update cache
         try {
           const cacheData = {
@@ -333,12 +364,18 @@ export default function DocumentPage() {
             currentVersion: newVersionNumber,
             latestContent: editContent,
           };
-          sessionStorage.setItem(`document_${documentId}`, JSON.stringify(cacheData));
-          sessionStorage.setItem(`document_${documentId}_timestamp`, Date.now().toString());
+          sessionStorage.setItem(
+            `document_${documentId}`,
+            JSON.stringify(cacheData)
+          );
+          sessionStorage.setItem(
+            `document_${documentId}_timestamp`,
+            Date.now().toString()
+          );
         } catch (e) {
           console.warn("Failed to update document cache:", e);
         }
-        
+
         // Exit edit mode after saving
         setTimeout(() => {
           setIsEditing(false);
@@ -348,7 +385,7 @@ export default function DocumentPage() {
     } catch (error) {
       console.error("Error saving document:", error);
       setSaveError("Failed to save document. Please try again.");
-      
+
       // Rollback optimistic updates
       setVersions(previousVersions);
       if (document) {
@@ -362,14 +399,14 @@ export default function DocumentPage() {
   // Format date for display - memoized
   const formatDate = useCallback((dateString: string) => {
     if (!dateString) return "Unknown date";
-    
+
     const date = new Date(dateString);
     return new Intl.DateTimeFormat("en-US", {
       day: "numeric",
       month: "short",
       year: "numeric",
       hour: "2-digit",
-      minute: "2-digit"
+      minute: "2-digit",
     }).format(date);
   }, []);
 
@@ -377,10 +414,12 @@ export default function DocumentPage() {
   const handleNewChat = useCallback(() => {
     router.push("/");
   }, [router]);
-  
+
   // Memoize current version content to avoid unnecessary recalculations
   const currentVersionContent = useMemo(() => {
-    return versions.find(v => v.versionNumber === currentVersion)?.content || "";
+    return (
+      versions.find((v) => v.versionNumber === currentVersion)?.content || ""
+    );
   }, [versions, currentVersion]);
 
   return (
@@ -397,11 +436,16 @@ export default function DocumentPage() {
         <header className="bg-white border-b border-gray-200 py-3 px-6">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
-              <Link href="/library" className="text-gray-600 hover:text-gray-900">
+              <Link
+                href="/library"
+                className="text-gray-600 hover:text-gray-900"
+              >
                 <ArrowLeft size={20} />
               </Link>
               <h1 className="text-xl font-medium text-gray-900">
-                {isLoading ? "Loading..." : document?.data?.name || document?.file_name || "Document"}
+                {isLoading
+                  ? "Loading..."
+                  : document?.data?.name || document?.file_name || "Document"}
               </h1>
             </div>
             <div className="flex items-center space-x-3">
@@ -434,7 +478,9 @@ export default function DocumentPage() {
                     disabled={isSaving}
                     className={cn(
                       "flex items-center px-3 py-1.5 rounded-lg bg-[#1A479D] text-white",
-                      isSaving ? "opacity-70 cursor-not-allowed" : "hover:bg-[#153A82]"
+                      isSaving
+                        ? "opacity-70 cursor-not-allowed"
+                        : "hover:bg-[#153A82]"
                     )}
                   >
                     {isSaving ? (
@@ -463,7 +509,9 @@ export default function DocumentPage() {
           {showVersionsPanel && (
             <div className="w-64 border-r border-gray-200 overflow-y-auto">
               <div className="p-4">
-                <h3 className="font-medium text-gray-900 mb-3">Document Versions</h3>
+                <h3 className="font-medium text-gray-900 mb-3">
+                  Document Versions
+                </h3>
                 <div className="space-y-2">
                   {versions.map((version) => (
                     <button
@@ -476,9 +524,13 @@ export default function DocumentPage() {
                           : "text-gray-700 hover:bg-gray-100"
                       )}
                     >
-                      <div className="font-medium">Version {version.versionNumber}</div>
+                      <div className="font-medium">
+                        Version {version.versionNumber}
+                      </div>
                       <div className="text-xs opacity-80">
-                        {version.timestamp ? formatDate(version.timestamp) : "Date unknown"}
+                        {version.timestamp
+                          ? formatDate(version.timestamp)
+                          : "Date unknown"}
                       </div>
                     </button>
                   ))}
@@ -517,7 +569,7 @@ export default function DocumentPage() {
                   </div>
                 ) : (
                   <div className="prose prose-blue max-w-none">
-                    <AnimatedMarkdown 
+                    <AnimatedMarkdown
                       content={currentVersionContent}
                       messageId={`doc-${documentId}-v${currentVersion}`}
                       onAnimationComplete={() => {}}

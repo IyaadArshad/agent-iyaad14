@@ -815,11 +815,7 @@ export default function Home() {
     const file = files[0];
     startStep("upload");
 
-    const allowedTypes = [
-      "application/pdf",
-      "text/markdown",
-      "text/plain",
-    ];
+    const allowedTypes = ["application/pdf", "text/markdown", "text/plain"];
 
     // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
@@ -876,7 +872,6 @@ export default function Home() {
           throw new Error("Failed to process BRS improvement");
         }
       }
-
     } catch (error: any) {
       console.error("Error in Improve BRS flow:", error);
       setImproveBRSError(`Error: ${error.message}`);
@@ -893,7 +888,10 @@ export default function Home() {
     if (!response.ok) {
       const errorData = await response
         .json()
-        .catch(() => ({ message: "Improvement process failed.", progress: [] }));
+        .catch(() => ({
+          message: "Improvement process failed.",
+          progress: [],
+        }));
 
       if (errorData.progress && Array.isArray(errorData.progress)) {
         errorData.progress.forEach((p: any) => {
@@ -1001,8 +999,7 @@ export default function Home() {
           conv.id === activeConversationId
             ? {
                 ...conv,
-                title:
-                  msg.substring(0, 30) + (msg.length > 30 ? "..." : ""),
+                title: msg.substring(0, 30) + (msg.length > 30 ? "..." : ""),
               }
             : conv
         )
@@ -1204,9 +1201,7 @@ export default function Home() {
 
                   if (agentMessageAdded) {
                     setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === agentMessageId ? { ...m } : m
-                      )
+                      prev.map((m) => (m.id === agentMessageId ? { ...m } : m))
                     );
                   }
                 }

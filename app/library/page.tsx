@@ -68,7 +68,8 @@ export default function LibraryPage() {
           const batch = data.slice(startIndex, endIndex).map((file: any) => {
             const fileData = file.data || {};
             const latestVersion = fileData.latestVersion || 0;
-            const versionData = (fileData.versions && fileData.versions[latestVersion]) || {};
+            const versionData =
+              (fileData.versions && fileData.versions[latestVersion]) || {};
 
             // Extract title and preview more efficiently
             let title = file.file_name.replace(/\.md$/, "");
@@ -119,8 +120,14 @@ export default function LibraryPage() {
 
             // Cache the processed documents
             try {
-              sessionStorage.setItem("cachedDocuments", JSON.stringify(allDocs));
-              sessionStorage.setItem("documentsTimestamp", Date.now().toString());
+              sessionStorage.setItem(
+                "cachedDocuments",
+                JSON.stringify(allDocs)
+              );
+              sessionStorage.setItem(
+                "documentsTimestamp",
+                Date.now().toString()
+              );
             } catch (e) {
               console.warn("Failed to cache documents in sessionStorage", e);
             }
@@ -133,7 +140,9 @@ export default function LibraryPage() {
         processDocuments(0, 20);
       } catch (error) {
         console.error("Error fetching documents:", error);
-        setLoadError(error instanceof Error ? error.message : "Failed to load documents");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load documents"
+        );
         setIsLoading(false);
       }
     };
@@ -294,7 +303,9 @@ export default function LibraryPage() {
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 py-4 px-6">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-semibold text-gray-900">Document Library</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">
+              Document Library
+            </h1>
             <div className="relative max-w-xs">
               <SearchIcon
                 size={18}
@@ -351,8 +362,12 @@ export default function LibraryPage() {
                           )}
                         </div>
                         <div className="p-4">
-                          <h3 className="font-medium text-gray-900 mb-1 truncate">{doc.title}</h3>
-                          <p className="text-xs text-gray-500">Last modified: {formatDate(doc.lastModified)}</p>
+                          <h3 className="font-medium text-gray-900 mb-1 truncate">
+                            {doc.title}
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Last modified: {formatDate(doc.lastModified)}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -396,7 +411,9 @@ export default function LibraryPage() {
                     height={80}
                     className="opacity-30 mb-4"
                   />
-                  <h3 className="text-xl font-medium text-gray-500 mb-2">No documents found</h3>
+                  <h3 className="text-xl font-medium text-gray-500 mb-2">
+                    No documents found
+                  </h3>
                   <p className="text-gray-400 mb-6">
                     {searchQuery
                       ? "Try changing your search query"

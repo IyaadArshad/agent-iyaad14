@@ -29,7 +29,7 @@ const VIRTUALIZATION_THRESHOLD = 15000; // Use virtualization for very long docu
 const ANIMATION_WORD_DELAY_MS = 8; // Reduced from 12ms to 8ms for faster animation
 const CHUNK_SIZE = 2000; // Characters per chunk for very large documents
 
-// Helper function to process children and apply word animations - optimized 
+// Helper function to process children and apply word animations - optimized
 const AnimatedText = ({
   children,
   wordIndexOffset,
@@ -43,7 +43,7 @@ const AnimatedText = ({
   if (disableAnimation) {
     return <>{children}</>;
   }
-  
+
   return Children.map(children, (child) => {
     if (typeof child === "string") {
       // Optimization: Instead of splitting every space, process multiple words at once
@@ -52,7 +52,7 @@ const AnimatedText = ({
         if (word.trim() === "") {
           return <Fragment key={index}>{word}</Fragment>;
         }
-        
+
         const currentWordIndex = wordIndexOffset.current;
         // Use a faster animation delay
         const delay = currentWordIndex * ANIMATION_WORD_DELAY_MS;
@@ -69,14 +69,14 @@ const AnimatedText = ({
         );
       });
     }
-    
+
     if (
       isValidElement<{ children?: React.ReactNode }>(child) &&
       child.props.children
     ) {
       return cloneElement(child, {
         children: (
-          <AnimatedText 
+          <AnimatedText
             wordIndexOffset={wordIndexOffset}
             disableAnimation={disableAnimation}
           >
@@ -85,7 +85,7 @@ const AnimatedText = ({
         ),
       });
     }
-    
+
     return child;
   });
 };
@@ -100,43 +100,49 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
   const wordIndexCounter = useRef(0);
   const [visibleContent, setVisibleContent] = useState<string>("");
   const [isFullyRendered, setIsFullyRendered] = useState(false);
-  
+
   // Determine if the content is very large and should skip animation/use virtualization
   const contentLength = content?.length || 0;
   const disableAnimation = contentLength > CONTENT_LENGTH_THRESHOLD;
   const useVirtualization = contentLength > VIRTUALIZATION_THRESHOLD;
-  
+
   // Use a callback ref to monitor the visible area
-  const observerRef = useCallback((node: HTMLElement | null) => {
-    if (node && useVirtualization && !isFullyRendered) {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          // Load more content as the user scrolls
-          if (entries[0].isIntersecting) {
-            if (visibleContent.length < content.length) {
-              // Load the next chunk
-              const nextChunkEnd = Math.min(visibleContent.length + CHUNK_SIZE, content.length);
-              setVisibleContent(content.substring(0, nextChunkEnd));
-            } else {
-              // All content is loaded
-              setIsFullyRendered(true);
-              observer.disconnect();
+  const observerRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (node && useVirtualization && !isFullyRendered) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            // Load more content as the user scrolls
+            if (entries[0].isIntersecting) {
+              if (visibleContent.length < content.length) {
+                // Load the next chunk
+                const nextChunkEnd = Math.min(
+                  visibleContent.length + CHUNK_SIZE,
+                  content.length
+                );
+                setVisibleContent(content.substring(0, nextChunkEnd));
+              } else {
+                // All content is loaded
+                setIsFullyRendered(true);
+                observer.disconnect();
+              }
             }
-          }
-        },
-        { threshold: 0.1 }
-      );
-      
-      observer.observe(node);
-      
-      return () => observer.disconnect();
-    }
-  }, [visibleContent, content, useVirtualization, isFullyRendered]);
-  
+          },
+          { threshold: 0.1 }
+        );
+
+        observer.observe(node);
+
+        return () => observer.disconnect();
+      }
+    },
+    [visibleContent, content, useVirtualization, isFullyRendered]
+  );
+
   // Initialize visible content
   useEffect(() => {
     wordIndexCounter.current = 0;
-    
+
     if (useVirtualization) {
       // Only render the first chunk initially
       setVisibleContent(content.substring(0, CHUNK_SIZE));
@@ -147,7 +153,7 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
       setIsFullyRendered(true);
     }
   }, [content, useVirtualization, messageId]);
-  
+
   // Calculate animation time and notify completion
   useEffect(() => {
     // Skip animation calculation if this component was already animated or if animations are disabled
@@ -161,12 +167,16 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
 
     // Mark as animated to prevent future re-animations
     hasAnimated.current = true;
-    
+
     // Use shorter animation durations for better performance
-    const wordCount = Math.min(200, content.split(/\s+/).filter(Boolean).length); // Cap word count
-    const lastWordDelay = wordCount > 0 ? (wordCount - 1) * ANIMATION_WORD_DELAY_MS : 0;
+    const wordCount = Math.min(
+      200,
+      content.split(/\s+/).filter(Boolean).length
+    ); // Cap word count
+    const lastWordDelay =
+      wordCount > 0 ? (wordCount - 1) * ANIMATION_WORD_DELAY_MS : 0;
     const animationDuration = Math.min(lastWordDelay + 300, 2000); // Cap total animation time
-    
+
     // Notify completion after animation
     if (onAnimationComplete) {
       const timer = setTimeout(() => {
@@ -175,29 +185,31 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
       return () => clearTimeout(timer);
     }
   }, [content, onAnimationComplete, messageId, disableAnimation]);
-  
+
   // Factory function to create either animated or non-animated components based on content size
-  const createComponent = <T extends ElementType>(elementType: T): React.FC<ComponentPropsWithoutRef<T>> => {
+  const createComponent = <T extends ElementType>(
+    elementType: T
+  ): React.FC<ComponentPropsWithoutRef<T>> => {
     return (props) => {
       const { children, ...restProps } = props as {
         children?: React.ReactNode;
       } & Omit<ComponentPropsWithoutRef<T>, "children">;
       const Element = elementType;
-      
+
       // Skip animation for large content
       if (disableAnimation) {
         return <Element {...(restProps as any)}>{children}</Element>;
       }
-      
+
       const elementDelay = wordIndexCounter.current * ANIMATION_WORD_DELAY_MS;
-      
+
       return (
         <Element
           {...(restProps as any)}
           className="animate-element"
           style={{ animationDelay: `${elementDelay}ms` }}
         >
-          <AnimatedText 
+          <AnimatedText
             wordIndexOffset={wordIndexCounter}
             disableAnimation={disableAnimation}
           >
@@ -226,7 +238,7 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
       if (inline) {
         return (
           <code className={className} style={style} {...props}>
-            <AnimatedText 
+            <AnimatedText
               wordIndexOffset={wordIndexCounter}
               disableAnimation={disableAnimation}
             >
@@ -252,10 +264,10 @@ const AnimatedMarkdownComponent: React.FC<AnimatedMarkdownProps> = ({
       >
         {visibleContent}
       </ReactMarkdown>
-      
+
       {useVirtualization && !isFullyRendered && (
-        <div 
-          ref={observerRef} 
+        <div
+          ref={observerRef}
           className="h-12 flex items-center justify-center text-gray-500 text-sm"
         >
           Loading more content...
