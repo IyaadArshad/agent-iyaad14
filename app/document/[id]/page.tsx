@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sidebar } from "@/components/Sidebar";
@@ -53,16 +53,74 @@ export default function DocumentPage() {
   const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([]);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [showVersionsPanel, setShowVersionsPanel] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
+  // Refs for performance optimization
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch document and its versions from the API
+  // Fetch document and its versions from the API - optimized with caching
   useEffect(() => {
     const fetchDocument = async () => {
       setIsLoading(true);
+      setLoadError(null);
+      
+      // Cancel any ongoing requests when component unmounts or when documentId changes
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      abortControllerRef.current = new AbortController();
+      
       try {
+        // Check session storage for cached document
+        const cachedDoc = sessionStorage.getItem(`document_${documentId}`);
+        if (cachedDoc) {
+          const parsedDoc = JSON.parse(cachedDoc);
+          const cachedTimestamp = sessionStorage.getItem(`document_${documentId}_timestamp`);
+          
+          // Use cached document if it's less than 5 minutes old
+          if (cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < 300000) {
+            setDocument(parsedDoc.document);
+            setVersions(parsedDoc.versions);
+            setCurrentVersion(parsedDoc.currentVersion);
+            setEditContent(parsedDoc.latestContent);
+            
+            // Add to recent documents
+            if (parsedDoc.document?.data) {
+              const docTitle = parsedDoc.document.data.name || parsedDoc.document.file_name;
+              addToRecentDocuments(parsedDoc.document.id, docTitle);
+            }
+            
+            setIsLoading(false);
+            
+            // Fetch in background for updates
+            fetchFromAPI(true);
+            return;
+          }
+        }
+        
+        // No valid cache, fetch from API
+        await fetchFromAPI(false);
+        
+      } catch (error) {
+        console.error("Error in document fetch flow:", error);
+        setLoadError(error instanceof Error ? error.message : "Failed to load document");
+        setIsLoading(false);
+      }
+    };
+    
+    // Separate function to fetch from API
+    const fetchFromAPI = async (isBackgroundFetch: boolean) => {
+      try {
+        if (!isBackgroundFetch) {
+          setIsLoading(true);
+        }
+        
         const response = await fetch(`https://database.acroford.com/files?id=eq.${documentId}`, {
           headers: {
             Accept: "application/json",
           },
+          signal: abortControllerRef.current?.signal,
         });
         
         if (!response.ok) {
@@ -98,15 +156,38 @@ export default function DocumentPage() {
         const latestContent = versionsArray.find(v => v.versionNumber === latestVersion)?.content || "";
         setEditContent(latestContent);
         
+        // Cache the document data
+        try {
+          const cacheData = {
+            document: doc,
+            versions: versionsArray,
+            currentVersion: latestVersion,
+            latestContent,
+          };
+          sessionStorage.setItem(`document_${documentId}`, JSON.stringify(cacheData));
+          sessionStorage.setItem(`document_${documentId}_timestamp`, Date.now().toString());
+        } catch (e) {
+          console.warn("Failed to cache document:", e);
+        }
+        
         // Add document to recent documents
         if (doc.data) {
           const docTitle = doc.data.name || doc.file_name;
           addToRecentDocuments(doc.id, docTitle);
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          // Request was aborted, do nothing
+          return;
+        }
         console.error("Error fetching document:", error);
+        if (!isBackgroundFetch) {
+          setLoadError(error instanceof Error ? error.message : "Failed to load document");
+        }
       } finally {
-        setIsLoading(false);
+        if (!isBackgroundFetch) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -129,10 +210,17 @@ export default function DocumentPage() {
     
     fetchDocument();
     loadUserData();
+    
+    // Cleanup on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [documentId]);
 
-  // Add document to recent documents list
-  const addToRecentDocuments = (id: string, title: string) => {
+  // Add document to recent documents list - memoized to prevent re-creation
+  const addToRecentDocuments = useCallback((id: string, title: string) => {
     try {
       const recentDoc: RecentDocument = {
         id,
@@ -151,35 +239,40 @@ export default function DocumentPage() {
     } catch (error) {
       console.error("Error updating recent documents:", error);
     }
-  };
+  }, []);
 
-  // Handle version selection
-  const handleVersionSelect = (versionNumber: number) => {
+  // Handle version selection - memoized
+  const handleVersionSelect = useCallback((versionNumber: number) => {
     setCurrentVersion(versionNumber);
     const versionContent = versions.find(v => v.versionNumber === versionNumber)?.content || "";
     setEditContent(versionContent);
     if (isEditing) {
       setIsEditing(false);
     }
-  };
+  }, [versions, isEditing]);
 
-  // Handle editing toggle
-  const toggleEditing = () => {
-    setIsEditing(!isEditing);
-    if (!isEditing) {
-      // When entering edit mode, set the content to the current version
-      const versionContent = versions.find(v => v.versionNumber === currentVersion)?.content || "";
-      setEditContent(versionContent);
-    }
-  };
+  // Handle editing toggle - memoized
+  const toggleEditing = useCallback(() => {
+    setIsEditing(prevState => {
+      if (!prevState) {
+        // When entering edit mode, set the content to the current version
+        const versionContent = versions.find(v => v.versionNumber === currentVersion)?.content || "";
+        setEditContent(versionContent);
+      }
+      return !prevState;
+    });
+  }, [versions, currentVersion]);
 
-  // Handle saving new version
-  const saveNewVersion = async () => {
+  // Handle saving new version - memoized with optimistic updates
+  const saveNewVersion = useCallback(async () => {
     if (!document || !currentVersion) return;
     
     setIsSaving(true);
     setSaveError("");
     setSaveSuccess(false);
+    
+    // Make a copy of the previous versions for rollback if needed
+    const previousVersions = [...versions];
     
     try {
       // Prepare the new version data
@@ -192,6 +285,23 @@ export default function DocumentPage() {
           [newVersionNumber]: editContent
         }
       };
+      
+      // Optimistically update UI
+      const newVersion: Version = {
+        versionNumber: newVersionNumber,
+        content: editContent,
+        timestamp: new Date().toISOString()
+      };
+      
+      setVersions([newVersion, ...versions]);
+      setCurrentVersion(newVersionNumber);
+      
+      // Update document in local state optimistically
+      const optimisticDocument = {
+        ...document,
+        data: updatedData
+      };
+      setDocument(optimisticDocument);
       
       // Update the document in the database
       const response = await fetch(`https://database.acroford.com/files?id=eq.${documentId}`, {
@@ -209,21 +319,25 @@ export default function DocumentPage() {
         throw new Error("Failed to save document");
       }
       
-      // Update local state with new version
+      // Update local state with server response
       const updatedDoc = await response.json();
       if (updatedDoc && updatedDoc[0]) {
         setDocument(updatedDoc[0]);
-        
-        // Add the new version to the versions array
-        const newVersion: Version = {
-          versionNumber: newVersionNumber,
-          content: editContent,
-          timestamp: new Date().toISOString()
-        };
-        
-        setVersions([newVersion, ...versions]);
-        setCurrentVersion(newVersionNumber);
         setSaveSuccess(true);
+        
+        // Update cache
+        try {
+          const cacheData = {
+            document: updatedDoc[0],
+            versions: [newVersion, ...versions],
+            currentVersion: newVersionNumber,
+            latestContent: editContent,
+          };
+          sessionStorage.setItem(`document_${documentId}`, JSON.stringify(cacheData));
+          sessionStorage.setItem(`document_${documentId}_timestamp`, Date.now().toString());
+        } catch (e) {
+          console.warn("Failed to update document cache:", e);
+        }
         
         // Exit edit mode after saving
         setTimeout(() => {
@@ -234,13 +348,19 @@ export default function DocumentPage() {
     } catch (error) {
       console.error("Error saving document:", error);
       setSaveError("Failed to save document. Please try again.");
+      
+      // Rollback optimistic updates
+      setVersions(previousVersions);
+      if (document) {
+        setCurrentVersion(document.data.latestVersion);
+      }
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [document, currentVersion, documentId, editContent, versions]);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
+  // Format date for display - memoized
+  const formatDate = useCallback((dateString: string) => {
     if (!dateString) return "Unknown date";
     
     const date = new Date(dateString);
@@ -251,12 +371,17 @@ export default function DocumentPage() {
       hour: "2-digit",
       minute: "2-digit"
     }).format(date);
-  };
+  }, []);
 
   // Handle new chat
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     router.push("/");
-  };
+  }, [router]);
+  
+  // Memoize current version content to avoid unnecessary recalculations
+  const currentVersionContent = useMemo(() => {
+    return versions.find(v => v.versionNumber === currentVersion)?.content || "";
+  }, [versions, currentVersion]);
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -299,7 +424,7 @@ export default function DocumentPage() {
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={toggleEditing}
-                    className="flex items-center px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                    className="flex items-center px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
                   >
                     <XCircle size={16} className="mr-1.5" />
                     <span>Cancel</span>
@@ -308,30 +433,24 @@ export default function DocumentPage() {
                     onClick={saveNewVersion}
                     disabled={isSaving}
                     className={cn(
-                      "flex items-center px-3 py-1.5 rounded-lg text-white",
-                      isSaving 
-                        ? "bg-gray-400 cursor-not-allowed" 
-                        : "bg-[#1A479D] hover:bg-[#153A82]"
+                      "flex items-center px-3 py-1.5 rounded-lg bg-[#1A479D] text-white",
+                      isSaving ? "opacity-70 cursor-not-allowed" : "hover:bg-[#153A82]"
                     )}
                   >
                     {isSaving ? (
                       <>
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-1.5"></div>
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-r-transparent rounded-full mr-1.5"></div>
                         <span>Saving...</span>
+                      </>
+                    ) : saveSuccess ? (
+                      <>
+                        <CheckCircle size={16} className="mr-1.5" />
+                        <span>Saved!</span>
                       </>
                     ) : (
                       <>
-                        {saveSuccess ? (
-                          <>
-                            <CheckCircle size={16} className="mr-1.5" />
-                            <span>Saved!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Save size={16} className="mr-1.5" />
-                            <span>Save</span>
-                          </>
-                        )}
+                        <Save size={16} className="mr-1.5" />
+                        <span>Save</span>
                       </>
                     )}
                   </button>
@@ -340,61 +459,50 @@ export default function DocumentPage() {
             </div>
           </div>
         </header>
-
-        <main className="flex-1 flex">
-          {/* Versions sidebar */}
+        <main className="flex-1 flex overflow-hidden">
           {showVersionsPanel && (
-            <div className="w-64 bg-gray-50 border-r border-gray-200 overflow-y-auto">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-sm font-medium text-gray-900">Document Versions</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {versions.length} {versions.length === 1 ? "version" : "versions"}
-                </p>
-              </div>
-              <div className="divide-y divide-gray-200">
-                {versions.map((version) => (
-                  <button
-                    key={version.versionNumber}
-                    onClick={() => handleVersionSelect(version.versionNumber)}
-                    className={cn(
-                      "w-full text-left p-3 hover:bg-gray-100",
-                      currentVersion === version.versionNumber && "bg-blue-50"
-                    )}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className={cn(
-                        "text-sm font-medium",
-                        currentVersion === version.versionNumber ? "text-blue-600" : "text-gray-900"
-                      )}>
-                        Version {version.versionNumber}
-                      </span>
-                      {version.versionNumber === document?.data?.latestVersion && (
-                        <span className="text-xs bg-blue-100 text-blue-800 py-0.5 px-2 rounded-full">
-                          Latest
-                        </span>
+            <div className="w-64 border-r border-gray-200 overflow-y-auto">
+              <div className="p-4">
+                <h3 className="font-medium text-gray-900 mb-3">Document Versions</h3>
+                <div className="space-y-2">
+                  {versions.map((version) => (
+                    <button
+                      key={version.versionNumber}
+                      onClick={() => handleVersionSelect(version.versionNumber)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm",
+                        currentVersion === version.versionNumber
+                          ? "bg-[#1A479D] text-white"
+                          : "text-gray-700 hover:bg-gray-100"
                       )}
-                    </div>
-                    {version.timestamp && (
-                      <p className="text-xs text-gray-500">
-                        {formatDate(version.timestamp)}
-                      </p>
-                    )}
-                  </button>
-                ))}
+                    >
+                      <div className="font-medium">Version {version.versionNumber}</div>
+                      <div className="text-xs opacity-80">
+                        {version.timestamp ? formatDate(version.timestamp) : "Date unknown"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
-
-          {/* Document content */}
-          <div className={cn("flex-1 overflow-y-auto bg-white", isEditing ? "p-0" : "p-6")}>
+          <div className="flex-1 overflow-y-auto p-6">
             {isLoading ? (
               <div className="flex justify-center items-center h-full">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#1A479D]"></div>
+                <div className="animate-pulse flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-full bg-gray-200 mb-4"></div>
+                  <div className="h-4 w-32 bg-gray-200 rounded mb-3"></div>
+                  <div className="h-3 w-24 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+            ) : loadError ? (
+              <div className="flex justify-center items-center h-full">
+                <p className="text-red-500">{loadError}</p>
               </div>
             ) : (
               <>
                 {isEditing ? (
-                  <div className="h-full">
+                  <div className="h-full relative">
                     <textarea
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
@@ -410,7 +518,7 @@ export default function DocumentPage() {
                 ) : (
                   <div className="prose prose-blue max-w-none">
                     <AnimatedMarkdown 
-                      content={versions.find(v => v.versionNumber === currentVersion)?.content || ""}
+                      content={currentVersionContent}
                       messageId={`doc-${documentId}-v${currentVersion}`}
                       onAnimationComplete={() => {}}
                     />
