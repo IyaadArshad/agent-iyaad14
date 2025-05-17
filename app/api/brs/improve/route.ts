@@ -52,7 +52,6 @@ async function callOpenAI(
       error.message,
       error.error
     );
-    // Rethrow or handle as appropriate for the flow
     throw new Error(
       `OpenAI API call failed for model ${model}: ${error.message}`
     );
@@ -129,509 +128,656 @@ Output ONLY the improved BRS document in Markdown format. Do not include any add
 `;
 
 // Progress tracking interface for client feedback
-interface ProgressUpdate {
-  stepId: string;
-  status: "started" | "completed" | "failed";
-  message: string;
-  timestamp: number;
-}
+import {
+  ProgressUpdate,
+  formatSSE,
+  enforceMinStepDuration,
+} from "./streaming-utils";
 
 export async function POST(request: NextRequest) {
-  // Track improvement process steps
-  const progress: ProgressUpdate[] = [];
+  // Create the stream immediately
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
+  const encoder = new TextEncoder();
 
-  const addProgress = (
-    stepId: string,
-    status: "started" | "completed" | "failed",
-    message: string
-  ) => {
-    progress.push({
-      stepId,
-      status,
-      message,
-      timestamp: Date.now(),
-    });
-    console.log(`BRS Improve [${stepId}] ${status}: ${message}`);
+  // Return the response with the stream right away
+  const response = new Response(stream.readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+
+  // Function to send an update to the client
+  // Track if the writer is closed to prevent "Writer is closed" errors
+  let isWriterClosed = false;
+  
+  const sendUpdate = async (update: any) => {
+    if (isWriterClosed) {
+      console.log("Stream writer is already closed, skipping update:", update.type);
+      return;
+    }
+    
+    try {
+      await writer.write(encoder.encode(formatSSE(update)));
+      console.log(`Successfully sent ${update.type} update to client`);
+    } catch (e: any) {
+      // If we get a "Writer is closed" error, mark the writer as closed to prevent further attempts
+      if (e.message && e.message.includes("closed")) {
+        console.warn("Stream writer is now closed, marking as closed");
+        isWriterClosed = true;
+      } else {
+        console.error("Failed to write to stream:", e);
+      }
+    }
   };
 
-  try {
-    // Check if this is a form submission (PDF) or JSON (markdown directly)
-    let markdownContent: string;
-    let originalFilename: string;
-    const contentType = request.headers.get("content-type") || "";
+  // The main processing function that runs asynchronously
+  const processDocument = async () => {
+    // Track improvement process steps
+    const progress: ProgressUpdate[] = [];
+    const stepStartTimes = new Map<string, number>();
 
-    // Handle PDF upload case
-    if (contentType.includes("multipart/form-data")) {
-      addProgress("upload", "started", "Processing PDF document upload");
+    // Send progress updates both to the client and track them
+    const addProgress = async (
+      stepId: string,
+      status: "started" | "completed" | "failed",
+      message: string
+    ) => {
+      const timestamp = Date.now();
 
-      const formData = await request.formData();
-      const pdfFile = formData.get("file") as File | null;
-
-      if (!pdfFile) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "No PDF file provided",
-          },
-          { status: 400 }
+      // If it's a "started" event, record the start time
+      if (status === "started") {
+        stepStartTimes.set(stepId, timestamp);
+      }
+      // If it's a "completed" event, enforce minimum duration
+      else if (status === "completed") {
+        console.log(
+          `BRS Import [${stepId}] enforcing minimum duration before completing`
         );
+        await enforceMinStepDuration(stepId, stepStartTimes);
       }
 
-      // Convert PDF to markdown using the pdf-converter endpoint
-      addProgress("convert", "started", "Converting PDF to Markdown format");
-
-      const pdfFormData = new FormData();
-      pdfFormData.append("file", pdfFile);
-
-      const pdfConverterResponse = await fetch(
-        `${API_BASE_URL}/api/brs/pdf-converter`,
-        {
-          method: "POST",
-          body: pdfFormData,
+      // Map backend steps to frontend UI steps for more intuitive display and accurate representation
+      // Define the workflow steps in the same order as the UI expects:
+      // 1. "Upload file"
+      // 2. "Parse PDF to Markdown" (conditional)
+      // 3. "Determining file name"
+      // 4. "Creating file"
+      // 5. "Generating content"
+      let displayStepId = stepId;
+      let displayMessage = message;
+      
+      // Improved step mapping that exactly matches the required UI flow
+      const stepMapping: Record<string, {uiStep: string, displayName?: string}> = {
+        'upload': { uiStep: 'upload', displayName: 'Upload file' },
+        'convert': { uiStep: 'convert', displayName: 'Parse PDF to Markdown' },
+        'analyze': { uiStep: 'upload', displayName: 'Analyzing document structure' }, 
+        'filename': { uiStep: 'filename', displayName: 'Generate file name' },
+        'save': { uiStep: 'save', displayName: 'Create file' },
+        'overview': { uiStep: 'overview', displayName: 'Plan overview' },
+        'improve': { uiStep: 'improve', displayName: 'Generate content' },
+        'final-save': { uiStep: 'final-save', displayName: 'Save to file' }
+      };
+      
+      // Apply the mapping
+      if (stepMapping[stepId]) {
+        displayStepId = stepMapping[stepId].uiStep;
+        if (stepMapping[stepId].displayName && status === "started") {
+          displayMessage = stepMapping[stepId].displayName;
         }
-      );
+      }
+      
+      const update: ProgressUpdate = {
+        stepId: displayStepId,
+        status,
+        message: displayMessage,
+        timestamp,
+      };
 
-      if (!pdfConverterResponse.ok) {
-        const errorData = await pdfConverterResponse.json();
-        addProgress(
+      progress.push(update);
+
+      // Send the update to the client
+      await sendUpdate({ type: "progress", data: update });
+    };
+
+    try {
+      // Check if this is a form submission (PDF) or JSON (markdown directly)
+      let markdownContent: string;
+      let originalFilename: string;
+      const contentType = request.headers.get("content-type") || "";
+
+      // Handle PDF upload case
+      if (contentType.includes("multipart/form-data")) {
+        await addProgress(
+          "upload",
+          "started",
+          "Processing PDF document upload"
+        );
+
+        const formData = await request.formData();
+        const pdfFile = formData.get("file") as File | null;
+
+        if (!pdfFile) {
+          const errorMsg = "No PDF file provided";
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        // Convert PDF to markdown using the pdf-converter endpoint
+        await addProgress(
           "convert",
-          "failed",
-          `PDF conversion failed: ${errorData.message}`
+          "started",
+          "Converting PDF to Markdown format"
         );
-        return NextResponse.json(
+
+        const pdfFormData = new FormData();
+        pdfFormData.append("file", pdfFile);
+
+        const pdfConverterResponse = await fetch(
+          `${API_BASE_URL}/api/brs/pdf-converter`,
           {
-            success: false,
-            message: `Failed to convert PDF: ${errorData.message}`,
-            progress,
-          },
-          { status: 500 }
-        );
-      }
-
-      const pdfConverterResult = await pdfConverterResponse.json();
-      markdownContent = pdfConverterResult.markdownContent;
-      originalFilename = pdfConverterResult.originalFilename;
-
-      addProgress(
-        "convert",
-        "completed",
-        "PDF successfully converted to Markdown"
-      );
-      addProgress(
-        "upload",
-        "completed",
-        "Document successfully uploaded and processed"
-      );
-    }
-    // Handle direct markdown submission
-    else {
-      addProgress("upload", "started", "Processing Markdown document");
-      const body = await request.json();
-      markdownContent = body.markdownContent;
-      originalFilename = body.originalFilename;
-
-      if (!markdownContent || typeof markdownContent !== "string") {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Markdown content is required and must be a string.",
-            progress,
-          },
-          { status: 400 }
-        );
-      }
-      if (!originalFilename || typeof originalFilename !== "string") {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Original filename is required and must be a string.",
-            progress,
-          },
-          { status: 400 }
-        );
-      }
-      addProgress(
-        "upload",
-        "completed",
-        "Document successfully uploaded and processed"
-      );
-    }
-
-    addProgress("analyze", "started", "Analyzing document structure");
-    console.log(`BRS Improve: Starting process for "${originalFilename}"`);
-
-    // 1. Generate Implementation Overview
-    addProgress("overview", "started", "Generating implementation overview");
-    console.log("BRS Improve: Generating implementation overview...");
-    const overviewContent = await callOpenAI(
-      "o4-mini",
-      SYSTEM_PROMPT_OVERVIEW,
-      markdownContent
-    );
-    if (!overviewContent) {
-      addProgress(
-        "overview",
-        "failed",
-        "Failed to generate implementation overview"
-      );
-      console.error("BRS Improve: Failed to generate implementation overview.");
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Failed to generate implementation overview.",
-          progress,
-        },
-        { status: 500 }
-      );
-    }
-    addProgress(
-      "overview",
-      "completed",
-      "Implementation overview generated successfully"
-    );
-    addProgress(
-      "analyze",
-      "completed",
-      "Document structure analyzed completely"
-    );
-    console.log("BRS Improve: Overview generated.");
-
-    // 2. Generate Filename
-    addProgress("filename", "started", "Generating document identifier");
-    console.log("BRS Improve: Generating filename...");
-    const filenamePromptContent = `Original filename: ${originalFilename}\nBRS Content Summary (first 500 chars):\n${markdownContent.substring(
-      0,
-      500
-    )}`;
-    const nanoResponseJson = await callOpenAI(
-      "gpt-4.1-nano",
-      SYSTEM_PROMPT_FILENAME_NANO,
-      filenamePromptContent,
-      true
-    );
-
-    let suggestedTitle = "";
-    if (nanoResponseJson) {
-      try {
-        const parsedResponse = JSON.parse(nanoResponseJson);
-        if (
-          parsedResponse.suggested_title &&
-          typeof parsedResponse.suggested_title === "string"
-        ) {
-          suggestedTitle = parsedResponse.suggested_title
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "-") // Replace spaces with dashes
-            .replace(/[^a-z0-9-]/g, ""); // Remove invalid characters
-          if (!suggestedTitle) {
-            // Handle cases where sanitization results in an empty string
-            throw new Error("Sanitized title is empty.");
+            method: "POST",
+            body: pdfFormData,
           }
-        } else {
-          throw new Error(
-            "'suggested_title' not found or not a string in gpt-4.1-nano response."
+        );
+
+        if (!pdfConverterResponse.ok) {
+          const errorData = await pdfConverterResponse.json();
+          const errorMsg = `PDF conversion failed: ${errorData.message}`;
+          await addProgress("convert", "failed", errorMsg);
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        const pdfConverterResult = await pdfConverterResponse.json();
+        markdownContent = pdfConverterResult.markdownContent;
+        originalFilename = pdfConverterResult.originalFilename;
+
+        await addProgress(
+          "convert",
+          "completed",
+          "PDF successfully converted to Markdown"
+        );
+        await addProgress(
+          "upload",
+          "completed",
+          "Document successfully uploaded and processed"
+        );
+      }
+      // Handle direct markdown submission
+      else {
+        await addProgress("upload", "started", "Processing Markdown document");
+        let body;
+        try {
+          body = await request.json();
+          markdownContent = body.markdownContent;
+          originalFilename = body.originalFilename;
+        } catch (e) {
+          console.error("Failed to parse request body:", e);
+          const errorMsg = "Failed to parse request body";
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        if (!markdownContent || typeof markdownContent !== "string") {
+          const errorMsg = "Markdown content is required and must be a string";
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        if (!originalFilename || typeof originalFilename !== "string") {
+          const errorMsg = "Original filename is required and must be a string";
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        await addProgress(
+          "upload",
+          "completed",
+          "Document successfully uploaded and processed"
+        );
+      }
+
+      // Continue with the rest of the processing
+      await addProgress("analyze", "started", "Analyzing document structure");
+      console.log(`BRS Improve: Starting process for "${originalFilename}"`);
+      await addProgress(
+        "analyze",
+        "completed",
+        "Document structure analyzed completely"
+      );
+
+      // 1. First step: Upload file is already complete at this point
+
+      // 2. Generate Filename
+      await addProgress(
+        "filename",
+        "started",
+        "Generating document identifier"
+      );
+      console.log("BRS Improve: Generating filename...");
+
+      const filenamePromptContent = `Original filename: ${originalFilename}\nBRS Content Summary (first 500 chars):\n${markdownContent.substring(
+        0,
+        500
+      )}`;
+
+      const nanoResponseJson = await callOpenAI(
+        "gpt-4.1-nano",
+        SYSTEM_PROMPT_FILENAME_NANO,
+        filenamePromptContent,
+        true
+      );
+
+      let suggestedTitle = "";
+      if (nanoResponseJson) {
+        try {
+          const parsedResponse = JSON.parse(nanoResponseJson);
+          if (
+            parsedResponse.suggested_title &&
+            typeof parsedResponse.suggested_title === "string"
+          ) {
+            suggestedTitle = parsedResponse.suggested_title
+              .trim()
+              .toLowerCase()
+              .replace(/\s+/g, "-")
+              .replace(/[^a-z0-9-]/g, "");
+            if (!suggestedTitle) {
+              throw new Error("Sanitized title is empty.");
+            }
+          } else {
+            throw new Error(
+              "'suggested_title' not found or not a string in gpt-4.1-nano response."
+            );
+          }
+        } catch (e: any) {
+          console.error(
+            "BRS Improve: Failed to parse filename from gpt-4.1-nano. Response:",
+            nanoResponseJson,
+            "Error:",
+            e.message
+          );
+          suggestedTitle = `improved-brs-${Date.now()}`.replace(
+            /[^a-z0-9-]/g,
+            ""
           );
         }
-      } catch (e: any) {
+      } else {
         console.error(
-          "BRS Improve: Failed to parse filename from gpt-4.1-nano. Response:",
-          nanoResponseJson,
-          "Error:",
-          e.message
+          "BRS Improve: No response from gpt-4.1-nano for filename."
         );
         suggestedTitle = `improved-brs-${Date.now()}`.replace(
           /[^a-z0-9-]/g,
           ""
         );
       }
-    } else {
-      console.error("BRS Improve: No response from gpt-4.1-nano for filename.");
-      suggestedTitle = `improved-brs-${Date.now()}`.replace(/[^a-z0-9-]/g, "");
-    }
-    let finalFilename = `${suggestedTitle}.md`;
-    addProgress(
-      "filename",
-      "completed",
-      `Document identifier created: ${suggestedTitle}`
-    );
-    console.log(`BRS Improve: Filename generated: "${finalFilename}"`);
 
-    // 3. Create File Record
-    console.log("BRS Improve: Creating file record...");
-    const createFilePayload = { file_name: finalFilename }; // match required param
-    const createFileResponse = await fetch(`${API_BASE_URL}/api/files/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(createFilePayload),
-    });
+      let finalFilename = `${suggestedTitle}.md`;
+      await addProgress(
+        "filename",
+        "completed",
+        `Document identifier created: ${suggestedTitle}`
+      );
+      console.log(`BRS Improve: Filename generated: "${finalFilename}"`);
 
-    if (!createFileResponse.ok) {
-      const errorData = await createFileResponse
-        .json()
-        .catch(() => ({ message: createFileResponse.statusText }));
-      console.error("BRS Improve: Failed to create file record:", errorData);
-      return NextResponse.json(
+      // 3. Create File Record
+      await addProgress("save", "started", "Creating file record");
+      console.log("BRS Improve: Creating file record...");
+      const createFilePayload = { file_name: finalFilename };
+      const createFileResponse = await fetch(
+        `${API_BASE_URL}/api/files/create`,
         {
-          success: false,
-          message: `Failed to create file record: ${errorData.message}`,
-          progress,
-        },
-        { status: createFileResponse.status }
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(createFilePayload),
+        }
       );
-    }
-    const createFileResult = await createFileResponse.json();
-    // Initialize fileId from initial create response
-    let fileId: string | undefined =
-      typeof createFileResult.file_name === "string"
-        ? createFileResult.file_name
-        : undefined;
-
-    // Handle name collision: ask GPT-4.1-nano for an alternative filename and retry
-    if (
-      createFileResult.success === false &&
-      /already exists/.test(createFileResult.message)
-    ) {
-      console.warn(
-        `BRS Improve: Filename "${finalFilename}" unavailable: ${createFileResult.message}`
-      );
-
-      // More explicit prompt for a truly different filename
-      const altFilenamePrompt = `${filenamePromptContent}
       
+      // For file creation, a 200 response with error message means file exists
+      // This is not a fatal error - we'll handle it by generating an alternative name
+      let createFileResult;
+      try {
+        createFileResult = await createFileResponse.json();
+      } catch (e) {
+        const errorMsg = `Failed to parse file creation response: ${createFileResponse.statusText}`;
+        console.error("BRS Improve: Failed to parse file creation response:", e);
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
+      }
+      
+      // Only treat it as a fatal error if it's not a file-exists error
+      if (!createFileResponse.ok && !(/already exists/i.test(createFileResult?.message || ""))) {
+        const errorMsg = `Failed to create file record: ${createFileResult?.message || createFileResponse.statusText}`;
+        console.error("BRS Improve: Failed to create file record:", createFileResult);
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
+      }
+      let fileId: string | undefined =
+        typeof createFileResult.file_name === "string"
+          ? createFileResult.file_name
+          : undefined;
+
+      // Handle name collision - look for specific error message regardless of success flag
+      // First, check if message property exists, then check if it contains 'already exists'
+      if (createFileResult?.message && typeof createFileResult.message === 'string' && /already exists/.test(createFileResult.message)) {
+        console.warn(
+          `BRS Improve: Filename "${finalFilename}" unavailable: ${createFileResult.message}`
+        );
+
+        // Send a progress update indicating file name collision is being handled
+        await addProgress(
+          "filename",
+          "started",
+          `Generating alternative file name for "${suggestedTitle}" (already exists)`
+        );
+
+        const altFilenamePrompt = `${filenamePromptContent}
+        
 IMPORTANT: The filename "${suggestedTitle}" is already taken. Generate a COMPLETELY DIFFERENT name with additional modifiers or alternate terminology.
 For example, if "inventory-management" is taken, suggest something like "stock-control-system" instead of just adding a number.`;
 
-      const altNanoJson = await callOpenAI(
-        "gpt-4.1-nano",
-        SYSTEM_PROMPT_FILENAME_NANO,
-        altFilenamePrompt,
-        true
-      );
-      let altTitle = "";
+        const altNanoJson = await callOpenAI(
+          "gpt-4.1-nano",
+          SYSTEM_PROMPT_FILENAME_NANO,
+          altFilenamePrompt,
+          true
+        );
+        let altTitle = "";
 
-      try {
-        const altParsed = JSON.parse(altNanoJson || "{}");
-        if (
-          altParsed.suggested_title &&
-          typeof altParsed.suggested_title === "string"
-        ) {
-          altTitle = altParsed.suggested_title
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9-]/g, "");
+        try {
+          const altParsed = JSON.parse(altNanoJson || "{}");
+          if (
+            altParsed.suggested_title &&
+            typeof altParsed.suggested_title === "string"
+          ) {
+            altTitle = altParsed.suggested_title
+              .trim()
+              .toLowerCase()
+              .replace(/\s+/g, "-")
+              .replace(/[^a-z0-9-]/g, "");
+          }
+        } catch (e) {
+          console.error("BRS Improve: Failed to parse alt filename:", e);
         }
-      } catch (e) {
-        console.error("BRS Improve: Failed to parse alt filename:", e);
-      }
 
-      // Guarantee uniqueness with timestamp even if altTitle matches or is empty
-      const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
-      if (!altTitle || altTitle === suggestedTitle) {
-        // If same title returned or parsing failed, use timestamp to make it unique
-        suggestedTitle = `${suggestedTitle}-v${timestamp}`;
-      } else {
-        // Use the alternative title if it's different
-        suggestedTitle = altTitle;
-      }
+        const timestamp = Date.now().toString().slice(-6);
+        if (!altTitle || altTitle === suggestedTitle) {
+          suggestedTitle = `${suggestedTitle}-v${timestamp}`;
+        } else {
+          suggestedTitle = altTitle;
+        }
 
-      finalFilename = `${suggestedTitle}.md`;
-      console.log(
-        `BRS Improve: Retrying with new filename: "${finalFilename}"`
-      );
-      const retryResponse = await fetch(`${API_BASE_URL}/api/files/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_name: finalFilename }),
-      });
-      if (!retryResponse.ok) {
-        const retryErr = await retryResponse.json().catch(() => ({}));
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Retry create file failed: ${retryErr.message}`,
-            progress,
-          },
-          { status: retryResponse.status }
+        finalFilename = `${suggestedTitle}.md`;
+        console.log(
+          `BRS Improve: Retrying with new filename: "${finalFilename}"`
+        );
+        
+        // Update progress to indicate we're trying with a new filename
+        await addProgress(
+          "filename",
+          "completed",
+          `Alternative file name generated: ${finalFilename}`
+        );
+        
+        // Start save step again with the new filename
+        await addProgress(
+          "save",
+          "started",
+          `Creating file with new name: ${finalFilename}`
+        );
+        
+        const retryResponse = await fetch(`${API_BASE_URL}/api/files/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_name: finalFilename }),
+        });
+
+        // Properly handle retry failures with clear error messages
+        if (!retryResponse.ok) {
+          try {
+            const retryErr = await retryResponse.json();
+            const errorMsg = `Retry create file failed: ${retryErr.message || "Unknown error"}`;
+            console.error(`BRS Improve: ${errorMsg}`);
+            await addProgress("save", "failed", errorMsg);
+            await sendUpdate({ type: "error", data: { message: errorMsg } });
+            return;
+          } catch (parseError) {
+            const errorMsg = "Failed to parse retry response";
+            console.error(`BRS Improve: ${errorMsg}`, parseError);
+            await addProgress("save", "failed", errorMsg);
+            await sendUpdate({ type: "error", data: { message: errorMsg } });
+            return;
+          }
+        }
+
+        // Parse and validate the retry result
+        try {
+          const retryResult = await retryResponse.json();
+          if (!retryResult.file_name) {
+            const errorMsg = "Filename retry did not return a valid name.";
+            console.error(`BRS Improve: ${errorMsg}`);
+            await addProgress("save", "failed", errorMsg);
+            await sendUpdate({ type: "error", data: { message: errorMsg } });
+            return;
+          }
+          
+          // Mark save step as completed with the new filename
+          await addProgress(
+            "save", 
+            "completed", 
+            `File created successfully with alternative name: ${finalFilename}`
+          );
+          
+          // Update fileId with the new file name
+          fileId = retryResult.file_name;
+        } catch (parseError) {
+          const errorMsg = "Failed to parse retry response data";
+          console.error(`BRS Improve: ${errorMsg}`, parseError);
+          await addProgress("save", "failed", errorMsg);
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
+          return;
+        }
+
+        console.log(
+          `BRS Improve: File record created with new name: ${fileId}`
         );
       }
-      const retryResult = await retryResponse.json();
-      if (!retryResult.file_name) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Filename retry did not return a valid name.",
-            progress,
-          },
-          { status: 500 }
+
+      if (!fileId) {
+        const errorMsg = "Failed to get file identifier after file creation.";
+        console.error(
+          "BRS Improve: File name not returned in create file response:",
+          createFileResult
         );
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
       }
-      fileId = retryResult.file_name;
-      console.log(`BRS Improve: File record created with new name: ${fileId}`);
-    }
 
-    // Original path if no collision or after retry
-    if (!fileId) {
-      console.error(
-        "BRS Improve: File name not returned in create file response:",
-        createFileResult
-      );
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Failed to get file identifier after file creation.",
-          progress,
-        },
-        { status: 500 }
-      );
-    }
-    console.log(`BRS Improve: File record created with name: ${fileId}`);
-
-    // 4. Generate Improved BRS Content
-    addProgress(
-      "improve",
-      "started",
-      "Enhancing BRS content based on implementation plan"
-    );
-    console.log("BRS Improve: Generating improved BRS content...");
-    const improvePrompt = `Original BRS Markdown (might be partial or rough):\n\n${markdownContent}\n\nStrictly follow this Implementation Overview to improve the BRS:\n\n${overviewContent}`;
-    const improvedBrsContent = await callOpenAI(
-      "gpt-4o",
-      SYSTEM_PROMPT_IMPROVE_BRS,
-      improvePrompt
-    );
-    if (!improvedBrsContent) {
-      addProgress(
-        "improve",
-        "failed",
-        "Failed to generate improved BRS content"
-      );
-      console.error("BRS Improve: Failed to generate improved BRS content.");
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Failed to generate improved BRS content.",
-          progress,
-        },
-        { status: 500 }
-      );
-    }
-    addProgress("improve", "completed", "BRS content enhanced successfully");
-    console.log("BRS Improve: Improved BRS content generated.");
-
-    // 5. Save Improved BRS Content
-    addProgress("save", "started", "Saving improved document");
-    console.log("BRS Improve: Saving improved BRS content...");
-    // The API /api/files/writeInitialData expects { file_name, data }
-    const writeDataPayload = {
-      file_name: finalFilename,
-      data: improvedBrsContent,
-    };
-    const writeDataResponse = await fetch(
-      `${API_BASE_URL}/api/files/writeInitialData`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(writeDataPayload),
-      }
-    );
-
-    if (!writeDataResponse.ok) {
-      const errorData = await writeDataResponse
-        .json()
-        .catch(() => ({ message: writeDataResponse.statusText }));
-      addProgress(
+      console.log(`BRS Improve: File record created with name: ${fileId}`);
+      await addProgress(
         "save",
-        "failed",
-        `Failed to save document: ${errorData.message}`
+        "completed",
+        "File record created successfully"
       );
-      console.error(
-        "BRS Improve: Failed to write initial data for improved BRS:",
-        errorData
-      );
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Failed to save improved BRS content: ${errorData.message}`,
-          progress,
-        },
-        { status: writeDataResponse.status }
-      );
-    }
-    const writeDataResult = await writeDataResponse.json();
-    addProgress("save", "completed", "Document saved successfully");
-    console.log("BRS Improve: Improved BRS content saved.", writeDataResult);
 
-    // 6. Save conversation record of this improvement
-    try {
-      const conversationTitle = `BRS Improvement: ${suggestedTitle}`;
-      const conversationPayload = {
-        title: conversationTitle,
-        messages: [
-          {
-            sender: "user",
-            text: `Improve my BRS document: ${originalFilename}`,
-          },
-          {
-            sender: "agent",
-            text: `Successfully improved your BRS document. The new document is available as ${finalFilename}.
-            
-Here's what I did:
-1. Analyzed your document structure
-2. Created an implementation plan
-3. Enhanced the content following BRS best practices
-4. Added more detailed specifications for each module
-5. Structured all sections consistently
+      // 4. Plan Overview - Generate Implementation Overview
+      await addProgress(
+        "overview",
+        "started",
+        "Creating document blueprint"
+      );
+      console.log("BRS Improve: Generating implementation overview...");
 
-You can view the improved document in the document library.`,
-          },
-        ],
+      const overviewContent = await callOpenAI(
+        "o4-mini",
+        SYSTEM_PROMPT_OVERVIEW,
+        markdownContent
+      );
+
+      if (!overviewContent) {
+        const errorMsg = "Failed to generate implementation overview";
+        await addProgress("overview", "failed", errorMsg);
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
+      }
+
+      await addProgress(
+        "overview",
+        "completed",
+        "Document blueprint created successfully"
+      );
+      console.log("BRS Improve: Overview generated.");
+
+      // 5. Generate Content (Improved BRS Content)
+      await addProgress(
+        "improve",
+        "started",
+        "Generating enhanced content"
+      );
+      console.log("BRS Improve: Generating improved BRS content...");
+
+      const improvePrompt = `Original BRS Markdown (might be partial or rough):\n\n${markdownContent}\n\nStrictly follow this Implementation Overview to improve the BRS:\n\n${overviewContent}`;
+      const improvedBrsContent = await callOpenAI(
+        "gpt-4o",
+        SYSTEM_PROMPT_IMPROVE_BRS,
+        improvePrompt
+      );
+
+      if (!improvedBrsContent) {
+        const errorMsg = "Failed to generate improved BRS content";
+        await addProgress("improve", "failed", errorMsg);
+        console.error("BRS Improve: Failed to generate improved BRS content.");
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
+      }
+
+      await addProgress(
+        "improve",
+        "completed",
+        "Content generated successfully"
+      );
+      console.log("BRS Improve: Improved BRS content generated.");
+
+      // 6. Save to file (Save Improved BRS Content)
+      await addProgress("final-save", "started", "Saving to file");
+      console.log("BRS Improve: Saving improved BRS content to file...");
+
+      const writeDataPayload = {
+        file_name: finalFilename,
+        data: improvedBrsContent,
       };
 
-      await fetch(`${API_BASE_URL}/api/conversations/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(conversationPayload),
-      });
-
-      console.log(
-        "BRS Improve: Conversation record saved for this improvement."
+      const writeDataResponse = await fetch(
+        `${API_BASE_URL}/api/files/writeInitialData`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(writeDataPayload),
+        }
       );
-    } catch (e) {
-      // Non-critical error, just log it
-      console.error("BRS Improve: Failed to save conversation record:", e);
-    }
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "BRS improved successfully.",
-        newDocumentName: finalFilename,
-        newDocumentId: fileId,
-        progress,
-        // For debugging or client use, you might include these:
-        // overview: overviewContent,
-        // generatedContentLength: improvedBrsContent.length
-      },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error(
-      "BRS Improve: Unhandled error in /api/brs/improve:",
-      error.message,
-      error.stack
-    );
-    let message = "An unexpected error occurred.";
-    if (error.message.includes("OpenAI API call failed")) {
-      message = error.message; // Propagate OpenAI specific errors
+      if (!writeDataResponse.ok) {
+        const errorData = await writeDataResponse
+          .json()
+          .catch(() => ({ message: writeDataResponse.statusText }));
+        const errorMsg = `Failed to save document: ${errorData.message}`;
+        await addProgress("final-save", "failed", errorMsg);
+        console.error(
+          "BRS Improve: Failed to write initial data for improved BRS:",
+          errorData
+        );
+        await sendUpdate({ type: "error", data: { message: errorMsg } });
+        return;
+      }
+
+      const writeDataResult = await writeDataResponse.json();
+      await addProgress("final-save", "completed", "File saved successfully");
+      console.log("BRS Improve: Improved BRS content saved.", writeDataResult);
+
+      // 6. Save conversation record of this improvement
+      try {
+        const conversationTitle = `BRS Improvement: ${suggestedTitle}`;
+        const conversationPayload = {
+          title: conversationTitle,
+          messages: [
+            {
+              sender: "user",
+              text: `Improve my BRS document: ${originalFilename}`,
+            },
+            {
+              sender: "agent",
+              text: `Successfully improved your BRS document. The new document is available as ${finalFilename}.
+              
+Here's what I did:
+1. Uploaded your file
+2. Generated an appropriate file name
+3. Created the file record
+4. Developed an implementation plan
+5. Generated enhanced content
+6. Saved the final document
+
+You can view the improved document in the document library.`,
+            },
+          ],
+        };
+
+        await fetch(`${API_BASE_URL}/api/conversations/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(conversationPayload),
+        });
+
+        console.log(
+          "BRS Improve: Conversation record saved for this improvement."
+        );
+      } catch (e) {
+        console.error("BRS Improve: Failed to save conversation record:", e);
+      }
+
+      // Send final success message
+      await sendUpdate({
+        type: "result",
+        data: {
+          success: true,
+          message: "BRS document imported successfully.",
+          newDocumentName: finalFilename,
+          newDocumentId: fileId,
+        },
+      });
+    } catch (error: any) {
+      console.error(
+        "BRS Import: Unhandled error in process function:",
+        error.message,
+        error.stack
+      );
+
+      let message = "An unexpected error occurred.";
+      if (error.message && error.message.includes("OpenAI API call failed")) {
+        message = error.message;
+      }
+
+      await sendUpdate({ type: "error", data: { message } });
+    } finally {
+      try {
+        if (!isWriterClosed) {
+          await writer.close();
+          isWriterClosed = true;
+          console.log("BRS Import: Stream closed successfully at end of processing");
+        } else {
+          console.log("BRS Import: Stream was already closed, skipping close() call");
+        }
+      } catch (e) {
+        console.error("BRS Import: Error closing stream:", e);
+        isWriterClosed = true; // Mark as closed anyway to prevent further attempts
+      }
     }
-    return NextResponse.json(
-      {
-        success: false,
-        message,
-        progress,
-      },
-      { status: 500 }
-    );
-  }
+  };
+
+  processDocument().catch((e) =>
+    console.error("BRS Import: Unhandled error in processDocument:", e)
+  );
+
+  return response;
 }

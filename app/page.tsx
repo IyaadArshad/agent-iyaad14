@@ -16,15 +16,9 @@ import {
   ZapIcon,
   SquareIcon,
   RocketIcon,
-  CopyIcon,
-  ThumbsUpIcon,
-  ThumbsDownIcon,
-  RefreshCwIcon,
-  PencilIcon,
   BellIcon,
   SettingsIcon,
   PaperclipIcon,
-  UploadIcon,
 } from "lucide-react";
 import { AnimatedMarkdown } from "@/components/AnimatedMarkdown";
 import MessageActionButtons from "@/components/MessageActionButtons";
@@ -37,10 +31,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { Modal } from "@/components/ui/modal";
 import { useBRSProgress } from "./components/BRSProgress";
-import BRSFileUpload from "./components/BRSFileUpload";
 import ErrorAlert from "./components/ErrorAlert";
+import BRSFileUpload from "./components/BRSFileUpload";
 
 type MessageType = {
   id: string;
@@ -671,8 +664,9 @@ export default function Home() {
   }, [useLiteOnFirst]);
 
   const [showImproveBRS, setShowImproveBRS] = useState(false);
-  const [isImprovingBRS, setIsImprovingBRS] = useState(false);
+  const [isGeneratingBRS, setIsGeneratingBRS] = useState(false);
   const [improveBRSError, setImproveBRSError] = useState<string | null>(null);
+  const [generatedName, setGeneratedName] = useState<string | null>(null);
 
   const {
     steps,
@@ -681,7 +675,6 @@ export default function Home() {
     completeStep,
     failStep,
     resetProgress,
-    progressTracker,
   } = useBRSProgress();
 
   useEffect(() => {
@@ -804,13 +797,16 @@ export default function Home() {
     }
   };
 
-  const handleImproveBRSFileUpload = async (files: FileList) => {
+  // Handle the BRS file upload process
+  const handleBRSFileUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
-    if (isImprovingBRS) return;
+    if (isGeneratingBRS) return;
 
-    setIsImprovingBRS(true);
+    console.log("Starting BRS file upload process");
+    setIsGeneratingBRS(true);
     setImproveBRSError(null);
     resetProgress();
+    setGeneratedName(null);
 
     const file = files[0];
     startStep("upload");
@@ -823,7 +819,7 @@ export default function Home() {
       setImproveBRSError(
         `File size exceeds the 10MB limit. Please upload a smaller file.`
       );
-      setIsImprovingBRS(false);
+      setIsGeneratingBRS(false);
       return;
     }
 
@@ -832,7 +828,7 @@ export default function Home() {
       setImproveBRSError(
         `Unsupported file type: ${file.type}. Please upload a PDF, MD, or TXT file.`
       );
-      setIsImprovingBRS(false);
+      setIsGeneratingBRS(false);
       return;
     }
 
@@ -853,7 +849,7 @@ export default function Home() {
 
         const handleResult = await processImproveResult(improveResponse);
         if (!handleResult) {
-          throw new Error("Failed to process BRS improvement from PDF");
+          throw new Error("Failed to generate BRS document from PDF");
         }
       } else if (file.type === "text/markdown" || file.type === "text/plain") {
         // Handle text files - convert to markdown if needed
@@ -869,29 +865,33 @@ export default function Home() {
 
         const handleResult = await processImproveResult(improveResponse);
         if (!handleResult) {
-          throw new Error("Failed to process BRS improvement");
+          throw new Error("Failed to generate BRS document");
         }
       }
     } catch (error: any) {
-      console.error("Error in Improve BRS flow:", error);
+      console.error("Error in BRS generation flow:", error);
       setImproveBRSError(`Error: ${error.message}`);
-      setIsImprovingBRS(false);
-
+      
       // Mark current step as failed
       if (currentStepId) {
         failStep(currentStepId);
       }
+      
+      // Ensure UI state is properly reset
+      console.log("BRS generation error: Resetting UI state");
+      setIsGeneratingBRS(false);
+      
+      // Don't automatically hide the BRS upload UI on error
+      // This keeps the error message visible to the user
     }
   };
 
   const processImproveResult = async (response: Response): Promise<boolean> => {
     if (!response.ok) {
-      const errorData = await response
-        .json()
-        .catch(() => ({
-          message: "Improvement process failed.",
-          progress: [],
-        }));
+      const errorData = await response.json().catch(() => ({
+        message: "BRS generation process failed.",
+        progress: [],
+      }));
 
       if (errorData.progress && Array.isArray(errorData.progress)) {
         errorData.progress.forEach((p: any) => {
@@ -901,47 +901,215 @@ export default function Home() {
         });
       }
 
-      throw new Error(errorData.message || "Failed to improve BRS document.");
+      throw new Error(errorData.message || "Failed to import BRS document.");
     }
 
+    // Check if we have a streaming response
+    if (response.headers.get("Content-Type")?.includes("text/event-stream")) {
+      let success = false;
+      let resultData = null;
+      let buffer = "";
+
+      // Get reader from the response body stream
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Failed to read response stream");
+
+      // Process stream events
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let delimiter;
+        while ((delimiter = buffer.indexOf("\n\n")) !== -1) {
+          const raw = buffer.slice(0, delimiter);
+          buffer = buffer.slice(delimiter + 2);
+          const dataMatch = raw.match(/^data: (.+)$/m);
+          if (!dataMatch) continue;
+          const eventData = JSON.parse(dataMatch[1]);
+          if (eventData.type === "progress") {
+            const p = eventData.data;
+                    // Map IDs and capture filename when completed
+            if (p.stepId === "filename" && p.status === "completed") {
+              const parts = p.message.split(": ");
+              if (parts.length > 1) setGeneratedName(parts[1]);
+            } else if (p.stepId === "save") {
+              // This is the "Creating file" step
+              p.stepId = "save";
+            } else if (p.stepId === "improve") {
+              // This is the "Generating content" step
+              p.stepId = "improve";
+            } else if (p.stepId === "final-save") {
+              // This is the "Save to file" step
+              p.stepId = "final-save";
+            }
+            if (p.status === "started") startStep(p.stepId);
+            else if (p.status === "completed") completeStep(p.stepId);
+            else if (p.status === "failed") failStep(p.stepId);
+          } else if (eventData.type === "result") {
+            // Final result - explicitly ensure all steps are completed
+            success = eventData.data.success;
+            resultData = eventData.data;
+            
+            // Make sure to complete all steps for successful import
+            if (success) {
+              // Complete any remaining steps when we get a successful result
+              ['upload', 'filename', 'save', 'overview', 'improve', 'final-save'].forEach(step => {
+                completeStep(step);
+              });
+              
+              // We'll handle the UI transition in the if(success && resultData) code block
+              // after the while loop completes, where we already have transition logic
+            }
+          } else if (eventData.type === "error") {
+            throw new Error(
+              eventData.data.message || "Failed to import BRS document"
+            );
+          }
+        }
+      }
+
+      // Return the result of the operation
+      if (success && resultData) {
+        // Ensure all steps are completed when we get success
+        completeStep("improve");
+        completeStep("final-save");
+        
+        // Create a new conversation with the result and show chat
+        console.log("BRS process completed successfully, transitioning to chat view with result:", resultData);
+        
+        // Create a new conversation based on the result data
+        const newConversationId = `conv-${Date.now()}`;
+        const documentTitle = resultData.newDocumentName
+          .replace(/\.md$/, "")
+          .replace(/_/g, " ");
+        const conversationTitle = `BRS from ${documentTitle}`;
+
+        const newConversation: Conversation = {
+          id: newConversationId,
+          title: conversationTitle,
+          date: new Date(),
+          messages: [
+            {
+              id: `brs-import-success-${Date.now()}`,
+              text: `Successfully created BRS from your document: **${resultData.newDocumentName}**. The document has been added to your library.`,
+              sender: "agent",
+            },
+          ],
+        };
+
+        // Update state to show the new conversation
+        setConversationHistory((prev) => [...prev, newConversation]);
+        setActiveConversationId(newConversationId);
+        setMessages(newConversation.messages);
+        
+        // Refresh recently used documents
+        const recentDocs = getRecentDocuments();
+        setRecentDocuments(recentDocs);
+        
+        // Complete the process
+        console.log("BRS generation complete: Setting UI state for transition to chat view");
+        setIsGeneratingBRS(false);
+        resetProgress();
+        
+        // Switch views with a slight delay to allow animations to complete
+        setTimeout(() => {
+          console.log("BRS SUCCESS: Executing UI transition now");
+          // Force state transitions in a specific order to ensure React updates correctly
+          setShowImproveBRS(false);
+          // Small delay between state changes
+          setTimeout(() => {
+            setShowChat(true);
+            setWelcomeOpacity(0);
+            setChatOpacity(1);
+            console.log("UI state transition complete: chat view should be visible");
+          }, 100);
+        }, 1000); // Slightly longer delay for better reliability
+        
+        return true;
+      }
+      return false;
+    }
+
+    // Handle non-streaming response (fallback)
     const improveResult = await response.json();
 
     if (improveResult.progress && Array.isArray(improveResult.progress)) {
       improveResult.progress.forEach((p: any) => {
+        // Handle filename recognition from progress updates
+        if (p.stepId === "filename" && p.status === "completed") {
+          const parts = p.message.split(": ");
+          if (parts.length > 1) setGeneratedName(parts[1]);
+        }
+        
         if (p.status === "started") startStep(p.stepId);
         else if (p.status === "completed") completeStep(p.stepId);
         else if (p.status === "failed") failStep(p.stepId);
       });
     } else {
-      completeStep("overview");
+      // Fallback for older non-streaming API
       completeStep("filename");
-      completeStep("improve");
       completeStep("save");
+      completeStep("overview");
+      completeStep("improve");
+      completeStep("final-save");
     }
 
     if (improveResult.success) {
-      setTimeout(() => {
-        setShowImproveBRS(false);
-        setShowChat(true);
-        setWelcomeOpacity(0);
-        setChatOpacity(1);
-        setMessages((prev) => [
-          ...prev,
+      // For non-streaming case, follow the same pattern as streaming
+      console.log("BRS process (non-streaming) completed successfully");
+      
+      // Create a new conversation with appropriate title
+      const newConversationId = `conv-${Date.now()}`;
+      const documentTitle = improveResult.newDocumentName
+        .replace(/\.md$/, "")
+        .replace(/_/g, " ");
+      const conversationTitle = `BRS from ${documentTitle}`;
+
+      const newConversation: Conversation = {
+        id: newConversationId,
+        title: conversationTitle,
+        date: new Date(),
+        messages: [
           {
-            id: `brs-improve-success-${Date.now()}`,
-            text: `Successfully improved BRS: **${improveResult.newDocumentName}**. It has been added to your library.`,
+            id: `brs-import-success-${Date.now()}`,
+            text: `Successfully created BRS from your document: **${improveResult.newDocumentName}**. The document has been added to your library.`,
             sender: "agent",
           },
-        ]);
-        const recentDocs = getRecentDocuments();
-        setRecentDocuments(recentDocs);
-        setIsImprovingBRS(false);
-        resetProgress();
-      }, 3000);
+        ],
+      };
+
+      // Add the conversation to history and set it as active
+      setConversationHistory((prev) => [...prev, newConversation]);
+      setActiveConversationId(newConversationId);
+      setMessages(newConversation.messages);
+      
+      // Refresh document list
+      const recentDocs = getRecentDocuments();
+      setRecentDocuments(recentDocs);
+      
+      // Reset BRS generation UI state
+      console.log("BRS generation complete (non-streaming): Setting UI state for transition to chat view");
+      setIsGeneratingBRS(false);
+      resetProgress();
+      
+      // Switch views with a delay to ensure UI state updates properly
+      setTimeout(() => {
+        console.log("BRS SUCCESS (non-streaming): Executing UI transition now");
+        // Force state transitions in a specific order to ensure React updates correctly
+        setShowImproveBRS(false);
+        // Small delay between state changes
+        setTimeout(() => {
+          setShowChat(true);
+          setWelcomeOpacity(0);
+          setChatOpacity(1);
+          console.log("UI state transition complete (non-streaming): chat view should be visible");
+        }, 100);
+      }, 1000); // Match streaming case delay
 
       return true;
     } else {
-      throw new Error(improveResult.message || "Improvement process failed.");
+      throw new Error(improveResult.message || "BRS generation process failed.");
     }
   };
 
@@ -1349,7 +1517,7 @@ export default function Home() {
   };
 
   return (
-    <div className={`flex min-h-screen h-screen bg-white`}>
+    <div className="flex h-screen w-full overflow-hidden">
       <Sidebar
         isCollapsed={isCollapsed}
         toggleSidebar={() => setIsCollapsed((prev) => !prev)}
@@ -1362,17 +1530,17 @@ export default function Home() {
         onLoginClick={handleLoginClick}
         onSignupClick={handleSignupClick}
       />
-      <div className="flex-1 flex flex-col relative">
-        {progressTracker}
+      <div className="flex-1 flex flex-col h-full relative">
         {showImproveBRS ? (
-          <div className="flex-1 flex flex-col p-8 bg-gradient-to-b from-white to-blue-50">
+          <div className="relative flex-1 flex flex-col">
+            {/* Back button with responsive positioning */}
             <button
               onClick={() => setShowImproveBRS(false)}
-              className="self-start text-gray-500 hover:text-gray-700 mb-4 flex items-center"
+              className="absolute top-2 sm:top-4 md:top-6 left-2 sm:left-4 md:left-6 text-gray-500 hover:text-gray-700 flex items-center z-10 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-gray-100 rounded-md transition-colors text-sm sm:text-base"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
+                className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-1.5"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
@@ -1382,66 +1550,47 @@ export default function Home() {
                   clipRule="evenodd"
                 />
               </svg>
-              Back to chat
+              <span className="hidden xs:inline">Back</span>
             </button>
 
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-[#1A479D] mb-2">
-                Improve BRS Document
-              </h1>
-              <p className="text-gray-500 max-w-2xl mx-auto">
-                Upload your existing BRS document to enhance it. Our AI will
-                analyze the structure, add missing details, fix inconsistencies,
-                and improve clarity throughout the document.
-              </p>
-            </div>
+            {/* Main content area with improved responsiveness */}
+            <div className="flex-1 flex flex-col justify-center items-center p-2 xs:p-3 sm:p-4 md:p-6 lg:p-8 bg-gradient-to-b from-white to-blue-50 overflow-y-auto">
+              <div className="flex flex-col items-center justify-center w-full max-w-xs xs:max-w-sm sm:max-w-md md:max-w-2xl lg:max-w-4xl my-auto">
+                <div className="text-center mb-3 sm:mb-4 md:mb-6 w-full px-2 sm:px-4">
+                  <h1 className="text-xl xs:text-2xl sm:text-3xl font-bold text-[#1A479D] mb-2 sm:mb-3 md:mb-4">
+                    Import BRS from Document
+                  </h1>
+                  <p className="text-xs xs:text-sm sm:text-base text-gray-500 mx-auto max-w-full sm:max-w-2xl">
+                    Upload your meeting notes, existing BRS document, or requirements to create a structured BRS. Our AI will
+                    analyze the content, extract key requirements, organize information, and generate a comprehensive
+                    Business Requirements Specification document.
+                  </p>
+                </div>
 
-            <div className="flex-1 flex flex-col items-center">
-              <ErrorAlert
-                message={improveBRSError}
-                onDismiss={() => setImproveBRSError(null)}
-              />
+                <ErrorAlert
+                  message={improveBRSError}
+                  onDismiss={() => setImproveBRSError(null)}
+                />
 
-              <BRSFileUpload
-                onFileSelect={handleImproveBRSFileUpload}
-                isLoading={isImprovingBRS}
-                errorMessage={null}
-              />
-
-              <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl w-full">
-                <h3 className="font-medium text-blue-700 mb-2 flex items-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5 mr-1"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clipRule="evenodd"
+                {/* Responsive file upload container */}
+                <div className="w-full px-2 xs:px-3 sm:px-4 py-3 sm:py-4 md:py-6 flex items-center justify-center">
+                  <div className="w-full min-h-[200px] xs:min-h-[250px] sm:min-h-[300px] md:min-h-[350px] lg:min-h-[400px]">
+                    <BRSFileUpload
+                      onFileSelect={handleBRSFileUpload}
+                      isLoading={isGeneratingBRS}
+                      errorMessage={improveBRSError}
+                      steps={steps}
+                      currentStepId={currentStepId}
+                      uploadFileName={generatedName || null}
                     />
-                  </svg>
-                  About BRS Improvement
-                </h3>
-                <p className="text-sm text-blue-600">
-                  This feature analyzes your Business Requirement Specification
-                  and enhances it by:
-                </p>
-                <ul className="text-sm text-blue-600 list-disc pl-5 mt-2 space-y-1">
-                  <li>Adding proper structure with consistent headings</li>
-                  <li>Creating detailed screen specifications</li>
-                  <li>Adding visual diagrams where needed</li>
-                  <li>Ensuring complete input/output documentation</li>
-                  <li>Adding sample data tables with validation rules</li>
-                  <li>Organizing content for better readability</li>
-                </ul>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         ) : !showChat ? (
           <main
-            className="flex-1 flex flex-col items-center justify-center"
+            className="flex-1 flex flex-col items-center justify-center overflow-hidden"
             style={{
               opacity: welcomeOpacity,
               transition: "opacity 0.3s ease-out",
@@ -1480,16 +1629,17 @@ export default function Home() {
           </main>
         ) : (
           <div
-            className="flex-1 flex flex-col h-full"
+            className="flex-1 flex flex-col overflow-hidden"
             style={{
               opacity: chatOpacity,
               transition: "opacity 0.3s ease-in",
             }}
           >
-            <div className="flex-grow relative overflow-hidden flex flex-col">
+            <div className="flex-1 relative">
               <div
                 ref={scrollContainerRef}
-                className="absolute inset-0 overflow-y-auto pb-40"
+                className="absolute inset-0 overflow-y-auto scroll-smooth"
+                style={{ paddingBottom: "160px" }}
               >
                 <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
                   <div className="sticky top-0 left-0 right-0 h-16 bg-gradient-to-b from-white to-transparent z-10"></div>
@@ -1527,11 +1677,11 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              <div className="absolute bottom-0 left-0 right-0 z-20">
+              <div className="absolute bottom-0 left-0 right-0 z-20 bg-white">
                 <div className="h-20 bg-gradient-to-t from-white to-transparent">
                   <div className="absolute inset-x-0 bottom-0 h-10 bg-white"></div>
                 </div>
-                <div className="bg-white px-4 sm:px-6 mb-8 pt-1">
+                <div className="bg-white px-4 sm:px-6 pb-8 pt-1">
                   <div className="w-full max-w-6xl mx-auto">
                     <InputBox
                       inputValue={inputValue}
@@ -1553,7 +1703,7 @@ export default function Home() {
         )}
         {!showChat && !showImproveBRS && (
           <footer
-            className="p-4 text-center text-gray-500 text-sm"
+            className="p-4 text-center text-gray-500 text-sm absolute bottom-0 w-full"
             style={{
               opacity: welcomeOpacity,
               transition: "opacity 0.3s ease-out",
@@ -1585,7 +1735,7 @@ export default function Home() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                <p className="text-xs">Improve BRS</p>
+                <p className="text-xs">Import BRS from Document</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
