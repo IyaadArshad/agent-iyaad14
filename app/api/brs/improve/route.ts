@@ -25,7 +25,8 @@ async function callOpenAI(
   model: "gpt-4.1-nano" | "gpt-4o" | "o4-mini",
   systemPrompt: string,
   userPrompt: string,
-  isJsonOutput: boolean = false
+  isJsonOutput: boolean = false,
+  temperature?: number
 ): Promise<string | null> {
   try {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -36,6 +37,7 @@ async function callOpenAI(
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
       model: model,
       messages: messages,
+      ...(temperature && { temperature })
     };
 
     if (isJsonOutput && model === "gpt-4.1-nano") {
@@ -55,6 +57,129 @@ async function callOpenAI(
     throw new Error(
       `OpenAI API call failed for model ${model}: ${error.message}`
     );
+  }
+}
+
+// New function to extract topics from markdown content
+async function extractTopics(markdownContent: string): Promise<string> {
+  try {
+    console.log("Extracting topics from markdown content...");
+    
+    const response = await openai.responses.create({
+      model: "gpt-4.1-nano",
+      input: [
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Identify the top-level modules for a BRS (Business Requirements Specification) document. Focus specifically on identifying the h2 or h3 headings that represent these modules.\n\n# Steps\n\n1. **Read the Document**: Begin by reading through the BRS document to understand its structure and content.\n2. **Identify Headings**: Look for headings that are formatted as h2 or h3. These headings typically designate different sections or modules within the document.\n3. **Select Top-Level Modules**: From the identified h2 or h3 headings, determine which represent the top-level modules. This usually involves discerning main sections or key business requirements.\n4. **List the Modules**: Compile a list of the headings you've identified as top-level modules.\n\n# Output Format\n\n- A bullet point list of the top-level module headings identified within the BRS document.\n\nMake sure to determine modules, modules sub bullet points, and modules sub bullet points sub bullet points.\n\n(Note: Real documents should be longer, and the context should be provided for more comprehensive analysis.) "
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": `Here's my document: ${markdownContent}`
+            }
+          ]
+        }
+      ],
+      text: {
+        "format": {
+          "type": "json_schema",
+          "name": "bulleted_list",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "description": "A list of topics each may have subtopics.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "topic": {
+                      "type": "string",
+                      "description": "The name or title of the topic."
+                    },
+                    "subtopics": {
+                      "type": "array",
+                      "description": "A list of subtopics under the main topic.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "subtopic": {
+                            "type": "string",
+                            "description": "The name or title of the subtopic."
+                          },
+                          "subsubtopics": {
+                            "type": "array",
+                            "description": "A list of subsubtopics under the subtopic.",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "subsubtopic": {
+                                  "type": "string",
+                                  "description": "The name or title of the subsubtopic."
+                                }
+                              },
+                              "required": [
+                                "subsubtopic"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "subtopic",
+                          "subsubtopics"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "topic",
+                    "subtopics"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      reasoning: {},
+      tools: [],
+      temperature: 1,
+      max_output_tokens: 32768,
+      top_p: 1,
+      store: true
+    });
+
+    // Process the response to extract the JSON content
+    let topicsJson: string;
+    if (typeof response.text === 'string') {
+      topicsJson = response.text;
+    } else if (response.text && typeof response.text === 'object' && 'value' in response.text) {
+      topicsJson = response.text.value as string;
+    } else {
+      console.error("Unexpected response format from topic extraction:", response);
+      throw new Error("Failed to extract topics: unexpected response format");
+    }
+
+    console.log("Topics extracted successfully");
+    return topicsJson;
+  } catch (err) {
+    console.error("Error extracting topics:", err);
+    throw new Error("Failed to extract topics from markdown content");
   }
 }
 
@@ -84,7 +209,50 @@ const SYSTEM_PROMPT_OVERVIEW = `You are an expert Business Requirements Specific
 
 6. Make each step precise (2–3 sentences max), unambiguous, and exhaustive so developers have no assumptions left. Think as deeply as possible about every requirement, module, and screen implied by the input document.
 
-This overview will guide both human reviewers and AI code generators to produce a final, polished, detailed BRS in Markdown.`;
+This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown.
+
+Transform and elevate BRS documents by creating a polished, detailed implementation plan in Markdown format.
+
+Your task is to create prompts to generate a Business Requirement Specification (BRS) based on user input and requested changes. Follow these guidelines:
+
+1. Respond with a short sentence starting with "I'll", summarizing your task in under 30 words.
+2. Provide a paragraph titled "Step by step changes:" with a numbered list of precise instructions. Ensure clarity and avoid excessive details.
+3. Clearly indicate changes, such as adding, modifying, or removing sections, maintaining the integrity and specificity of the user's request.
+4. Follow the BRS structure strictly:
+   - Use an H1 title with 4-5 professional words.
+   - Include screens with H2 headings, extra information, diagram (using JSON), and detailed specifications.
+5. Assume and include implicit user requirements not explicitly mentioned.
+6. Incorporate detailed modules for each function, specifying inputs, processes, and outputs, and utilize tables with at least 7 rows where necessary.
+7. Avoid tasks like file creation or saving. Maintain clarity to prevent accidental deletions.
+
+# Steps
+
+- Start with a concise overview of your task.
+- Develop an implementation outline with numbered steps for requested changes.
+- Ensure changes reflect detailed BRS format adherence and completion.
+- Use proper markdown structuring for clarity and effectiveness.
+
+# Output Format
+
+- Provide an implementation overview in Markdown with clear numbered steps.
+- Use precise technical language suitable for both human and AI consumption.
+
+# Notes
+
+- Ensure the document does not feel empty, and consider possible user requirements beyond the explicit instructions.
+- Maintain a complex, detailed, and organized approach to the BRS structure, preventing any minimalist appearance.
+
+Make it even more hardcore, it should be more like this "This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown.
+
+For your reference, read the format of a brs: "Start with a concise, simple H1 title (#) that uses 4-5 words (Example: MIS Control Module), it should sound professional, next, an BRS really just consists of different screens. Most BRS\'s have more than 10 screens - that\'s alot! A BRS is just a document that consists of different screens. Each screen has 4 sections. The first is the H2 (##) Heading that is the name of the screen. It is numbered, so the heading is prefixed with a 1. or 2. or 3. etc. It is a short 2-6 word of what the title does. If the screen is part of a larger screen (by context), the current smaller section is in brackets. Think carefully about using this. This would be like the users page, but the current screen is that of a new transaction, this would be "Users (New User)", other examples include "Sales (List View)", "Sales Manager (New Transaction)" etc. The second part of a screen is some extra information. It is usually a simple paragraph explaining the screen. You may use bold text, italics, bullet points or other visual aids to accompany this paragraph in this second section. It needs to be a brief overview. Use simple language that gets the point across without being unprofessional. The third section is the diagram. If this is a UI based function, then you add a diagram with a json markdown code block containing json {"brsDiagram": {}} The fourth and last section of every screen is the extra data. This is the last section, but it the main part of the screen information. It contains all the details and specifications, you must break down, decompose, and fully explain everything that the screen does, including explaining individual functions, adding tables or bullet points to specify data types, validation, inputs etc. You will also break it down fully for each module, each screen has modules and each models must have a properly explained inputs, processes, and outputs. There will always be some for of a short 1-2  sentence description in 1 or 2 lines too.  This could be adding a table for some sample data, tables to specify form field types, bullet points for extra info, etc. If sample data is there, make sure it is at least 7 rows.  Remember the format of the BRS markdown correctly as outlined above. Strictly follow this. You will not use bullet points to display lists with only 1 item, they should never feel empty. Never use the word description or title with a colon to state the title or description. That is implicit with the heading, subheading, and paragraph format outlined here. Remember to use the format of the BRS markdown correctly as outlined above. EXTEMELY IMPORTANT: You should be expected to think beyond what you were asked to do. You must assume and think hard about what the users requirements are, what the user implicitly might want too and add it in. Be detailed about it. For example, if you are asked to "create a one screen library management system only tracking books using crud for storage". Think about every possible function, module down the the very bottom on what the screen/function might be expected to do. Make sure in the brs document you have broken it down as much as possible. For the example, you should create a screen and have individual modules for each function of the screen, creating book entry, updating book details, deleting books, reading books details, etc. each module should contain the inputs, how its meant to be processed the outputs, you should leave no room for assumption for the developer reading the brs, you should be extremely specific and assume details you doesn't know. in the module example for example, you should explain how the module processes user input and how it displays output and, plans for the ui, for example in the read books module it suggests a plan for example you could add "
+1. The user would be required to input the name of the book they are querying
+2. The system uses CRUD operation read to fetch attributes IBAN, Name, and Blurb of the book
+4. The system should validate the input to ensure the book name exists in the database.
+5. If the book name is found, the system retrieves the book details including IBAN, Name, Blurb, and Tags.
+6. The retrieved details are displayed in a user-friendly format on the UI.
+7. If the book name is not found, the system should display an appropriate error message to the user.
+8. The UI should provide an option to go back to the main menu or perform another search.
+" Understand this example and think hard about the kind of BRS quality I expect. Know that this is an example and it is different depending on each users requests, but understand what I mean by you should go the extra mile to be specific. Remember that previously the user is used to spending 4 weeks detailing everything specifically and working on it. You should not just create a document with simply what they put. It needs to be extremely specific, detailed and follow requirements. Make sure to include sample data in a table where you think it will look good. All tables must have at least 7 rows. You should never have a BRS that feels empty or looks empty or spaced out. it is not meant to be minimalist, it is meant to be detailed to the core. Make sure a BRS never looks empty to anyone." understand and now remember how a brs is structured and write the brs with this mindset`;
 
 const SYSTEM_PROMPT_FILENAME_NANO = `You are an API assistant that generates valid filenames. Based on the provided BRS content summary or original filename, suggest a concise and descriptive filename for the BRS document.
 The filename MUST:
@@ -125,7 +293,29 @@ The final BRS must be:
 - Formatted exclusively in Markdown.
 
 Output ONLY the improved BRS document in Markdown format. Do not include any additional text, preambles, summaries, or explanations outside of the Markdown document itself.
-`;
+
+For your reference, read the format of a brs: "Start with a concise, simple H1 title (#) that uses 4-5 words (Example: MIS Control Module), it should sound professional, next, an BRS really just consists of different screens. Most BRS\'s have more than 10 screens - that\'s alot! A BRS is just a document that consists of different screens. Each screen has 4 sections. The first is the H2 (##) Heading that is the name of the screen. It is numbered, so the heading is prefixed with a 1. or 2. or 3. etc. It is a short 2-6 word of what the title does. If the screen is part of a larger screen (by context), the current smaller section is in brackets. Think carefully about using this. This would be like the users page, but the current screen is that of a new transaction, this would be "Users (New User)", other examples include "Sales (List View)", "Sales Manager (New Transaction)" etc. The second part of a screen is some extra information. It is usually a simple paragraph explaining the screen. You may use bold text, italics, bullet points or other visual aids to accompany this paragraph in this second section. It needs to be a brief overview. Use simple language that gets the point across without being unprofessional. The third section is the diagram. If this is a UI based function, then you add a diagram with a json markdown code block containing json {"brsDiagram": {}} The fourth and last section of every screen is the extra data. This is the last section, but it the main part of the screen information. It contains all the details and specifications, you must break down, decompose, and fully explain everything that the screen does, including explaining individual functions, adding tables or bullet points to specify data types, validation, inputs etc. You will also break it down fully for each module, each screen has modules and each models must have a properly explained inputs, processes, and outputs. There will always be some for of a short 1-2  sentence description in 1 or 2 lines too.  This could be adding a table for some sample data, tables to specify form field types, bullet points for extra info, etc. If sample data is there, make sure it is at least 7 rows.  Remember the format of the BRS markdown correctly as outlined above. Strictly follow this. You will not use bullet points to display lists with only 1 item, they should never feel empty. Never use the word description or title with a colon to state the title or description. That is implicit with the heading, subheading, and paragraph format outlined here. Remember to use the format of the BRS markdown correctly as outlined above. EXTEMELY IMPORTANT: You should be expected to think beyond what you were asked to do. You must assume and think hard about what the users requirements are, what the user implicitly might want too and add it in. Be detailed about it. For example, if you are asked to "create a one screen library management system only tracking books using crud for storage". Think about every possible function, module down the the very bottom on what the screen/function might be expected to do. Make sure in the brs document you have broken it down as much as possible. For the example, you should create a screen and have individual modules for each function of the screen, creating book entry, updating book details, deleting books, reading books details, etc. each module should contain the inputs, how its meant to be processed the outputs, you should leave no room for assumption for the developer reading the brs, you should be extremely specific and assume details you doesn't know. in the module example for example, you should explain how the module processes user input and how it displays output and, plans for the ui, for example in the read books module it suggests a plan for example you could add "
+1. The user would be required to input the name of the book they are querying
+2. The system uses CRUD operation read to fetch attributes IBAN, Name, and Blurb of the book
+4. The system should validate the input to ensure the book name exists in the database.
+5. If the book name is found, the system retrieves the book details including IBAN, Name, Blurb, and Tags.
+6. The retrieved details are displayed in a user-friendly format on the UI.
+7. If the book name is not found, the system should display an appropriate error message to the user.
+8. The UI should provide an option to go back to the main menu or perform another search.
+" Understand this example and think hard about the kind of BRS quality I expect. Know that this is an example and it is different depending on each users requests, but understand what I mean by you should go the extra mile to be specific. Remember that previously the user is used to spending 4 weeks detailing everything specifically and working on it. You should not just create a document with simply what they put. It needs to be extremely specific, detailed and follow requirements. Make sure to include sample data in a table where you think it will look good. All tables must have at least 7 rows. You should never have a BRS that feels empty or looks empty or spaced out. it is not meant to be minimalist, it is meant to be detailed to the core. Make sure a BRS never looks empty to anyone." understand and now remember how a brs is structured and write the brs with this mindset
+ONLY AND ONLY OUTPUT THE DOCUMENT BACK TO ME, DO NOT OUTPUT ANYTHING ELSE, I WANT NO EXPLANATION OF WHAT YOU DID OR WHAT IT IS ABOUT, I WANT ONLY THE DOCUMENT CONTENTS. YOUR OUTPUT WILL DIRECTLY BE SAVED TO THE BRS FILE. DO NOT SAY ANYTHING EXCEPT FOR THE FILE CONTENTS. Thank you :)
+
+# IMPORTANT: COMPREHENSIVE CONTENT REQUIREMENTS
+
+1. You MUST include detailed coverage for ALL topics, subtopics, and sub-subtopics provided in the implementation overview.
+2. Each module MUST have clearly defined:
+   - Detailed inputs with validation rules and data types
+   - Specific process steps that explain the exact logic and transformations
+   - Comprehensive outputs with format specifications
+3. DO NOT lose any formulas, calculations, or technical specifics from the original document.
+4. ALL tables MUST have a minimum of 7 rows with realistic, varied sample data.
+5. Every screen MUST include a complete breakdown of its functionality with no assumptions left for developers.
+6. Never simplify or abbreviate content - the BRS should be extremely thorough and detailed in every section.`;
 
 // Progress tracking interface for client feedback
 import {
@@ -209,10 +399,6 @@ export async function POST(request: NextRequest) {
       // 3. "Determining file name"
       // 4. "Creating file"
       // 5. "Generating content"
-      let displayStepId = stepId;
-      let displayMessage = message;
-
-      // Improved step mapping that exactly matches the required UI flow
       const stepMapping: Record<
         string,
         { uiStep: string; displayName?: string }
@@ -223,6 +409,7 @@ export async function POST(request: NextRequest) {
           uiStep: "upload",
           displayName: "Analyzing document structure",
         },
+        topics: { uiStep: "topics", displayName: "Extracting document topics" },
         filename: { uiStep: "filename", displayName: "Generate file name" },
         save: { uiStep: "save", displayName: "Create file" },
         overview: { uiStep: "overview", displayName: "Plan overview" },
@@ -231,6 +418,9 @@ export async function POST(request: NextRequest) {
       };
 
       // Apply the mapping
+      let displayStepId = stepId;
+      let displayMessage = message;
+
       if (stepMapping[stepId]) {
         displayStepId = stepMapping[stepId].uiStep;
         if (stepMapping[stepId].displayName && status === "started") {
@@ -358,6 +548,30 @@ export async function POST(request: NextRequest) {
         "Document structure analyzed completely"
       );
 
+      // NEW STEP: Extract topics from the document
+      await addProgress("topics", "started", "Extracting document topics");
+      console.log("BRS Improve: Extracting topics from document...");
+      
+      let extractedTopics;
+      try {
+        extractedTopics = await extractTopics(markdownContent);
+        await addProgress(
+          "topics", 
+          "completed", 
+          "Topics extracted successfully"
+        );
+        console.log("BRS Improve: Topics extracted successfully");
+      } catch (error) {
+        console.error("Failed to extract topics:", error);
+        await addProgress(
+          "topics", 
+          "failed", 
+          "Failed to extract document topics"
+        );
+        // Continue with the process even if topic extraction fails
+        extractedTopics = JSON.stringify({ items: [] });
+      }
+
       // 1. First step: Upload file is already complete at this point
 
       // 2. Generate Filename
@@ -377,7 +591,8 @@ export async function POST(request: NextRequest) {
         "gpt-4.1-nano",
         SYSTEM_PROMPT_FILENAME_NANO,
         filenamePromptContent,
-        true
+        true,
+        0.5
       );
 
       let suggestedTitle = "";
@@ -628,14 +843,26 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
         "File record created successfully"
       );
 
-      // 4. Plan Overview - Generate Implementation Overview
+      // 4. Plan Overview - Generate Implementation Overview with extracted topics
       await addProgress("overview", "started", "Creating document blueprint");
       console.log("BRS Improve: Generating implementation overview...");
+
+      // Include extracted topics in the prompt
+      const overviewPrompt = `
+Here is the original markdown content:
+
+${markdownContent}
+
+The following topics have been extracted from the document and MUST be included in your implementation plan:
+
+${extractedTopics}
+
+Please ensure your implementation plan covers ALL these topics comprehensively.`;
 
       const overviewContent = await callOpenAI(
         "o4-mini",
         SYSTEM_PROMPT_OVERVIEW,
-        markdownContent
+        overviewPrompt
       );
 
       if (!overviewContent) {
@@ -652,13 +879,24 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
       );
       console.log("BRS Improve: Overview generated.");
 
-      // 5. Generate Content (Improved BRS Content)
+      // 5. Generate Content (Improved BRS Content) with extracted topics
       await addProgress("improve", "started", "Generating enhanced content");
       console.log("BRS Improve: Generating improved BRS content...");
 
-      const improvePrompt = `Original BRS Markdown (might be partial or rough):\n\n${markdownContent}\n\nStrictly follow this Implementation Overview to improve the BRS:\n\n${overviewContent}`;
+      const improvePrompt = `Original BRS Markdown (might be partial or rough):
+
+${markdownContent}
+
+Extracted topics that MUST be comprehensively covered:
+
+${extractedTopics}
+
+Strictly follow this Implementation Overview to improve the BRS:
+
+${overviewContent}`;
+
       const improvedBrsContent = await callOpenAI(
-        "gpt-4o",
+        "o4-mini",
         SYSTEM_PROMPT_IMPROVE_BRS,
         improvePrompt
       );

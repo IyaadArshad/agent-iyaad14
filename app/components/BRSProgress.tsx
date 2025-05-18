@@ -26,6 +26,7 @@ export function BRSProgressTracker({
   const orderedStepIds = [
     "upload",
     "convert",
+    "topics",
     "filename",
     "save",
     "overview",
@@ -218,6 +219,7 @@ export function useBRSProgress() {
   const defaultSteps: ProgressStep[] = [
     { id: "upload", label: "Upload file", status: "waiting" },
     { id: "convert", label: "Parse PDF to Markdown", status: "waiting" },
+    { id: "topics", label: "Extract document topics", status: "waiting" }, // New step
     { id: "filename", label: "Generate file name", status: "waiting" },
     { id: "save", label: "Create file", status: "waiting" },
     { id: "overview", label: "Plan overview", status: "waiting" },
