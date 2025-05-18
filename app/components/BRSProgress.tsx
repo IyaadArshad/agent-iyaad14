@@ -23,22 +23,30 @@ export function BRSProgressTracker({
   const [overallProgress, setOverallProgress] = useState(0);
 
   // Define the exact step order we want to show
-  const orderedStepIds = ['upload', 'convert', 'filename', 'save', 'overview', 'improve', 'final-save'];
-  
+  const orderedStepIds = [
+    "upload",
+    "convert",
+    "filename",
+    "save",
+    "overview",
+    "improve",
+    "final-save",
+  ];
+
   // Update overall progress when steps or current step changes
   useEffect(() => {
     if (!isVisible) return;
 
     // Get ordered steps that we actually have
-    const relevantSteps = orderedStepIds.filter(id => 
-      steps.some(s => s.id === id)
+    const relevantSteps = orderedStepIds.filter((id) =>
+      steps.some((s) => s.id === id)
     );
-    
+
     // Count completed steps in our order
-    const completedSteps = relevantSteps.filter(id => 
-      steps.some(s => s.id === id && s.status === "completed")
+    const completedSteps = relevantSteps.filter((id) =>
+      steps.some((s) => s.id === id && s.status === "completed")
     ).length;
-    
+
     const failedSteps = steps.filter((s) => s.status === "failed").length;
     const inProgressStep = steps.find((s) => s.id === currentStepId);
 
@@ -54,7 +62,8 @@ export function BRSProgressTracker({
 
     // If we have failed steps, ensure progress doesn't reach 100%
     if (failedSteps > 0) {
-      const maxProgressWithFailures = ((steps.length - failedSteps) / steps.length) * 100;
+      const maxProgressWithFailures =
+        ((steps.length - failedSteps) / steps.length) * 100;
       progress = Math.min(progress, maxProgressWithFailures);
     } else {
       progress = Math.min(progress, 99); // Cap at 99% until fully complete
@@ -88,14 +97,19 @@ export function BRSProgressTracker({
         </div>
         <div className="text-sm text-gray-600 flex justify-between mt-2">
           <span>Progress</span>
-          <span className="font-medium">{Math.round(overallProgress)}% complete</span>
+          <span className="font-medium">
+            {Math.round(overallProgress)}% complete
+          </span>
         </div>
       </div>
 
       {/* Step indicators */}
       <div className="space-y-3">
         {steps.map((step) => (
-          <div key={step.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100">
+          <div
+            key={step.id}
+            className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100"
+          >
             <div className="flex items-center">
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center mr-3 ${
@@ -124,9 +138,25 @@ export function BRSProgressTracker({
                   </svg>
                 )}
                 {step.status === "processing" && (
-                  <svg className="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <svg
+                    className="w-4 h-4 animate-spin"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
                   </svg>
                 )}
                 {step.status === "failed" && (
@@ -164,10 +194,15 @@ export function BRSProgressTracker({
                 {step.status === "completed" &&
                   step.endTime &&
                   step.startTime &&
-                  `${Math.max(2, ((step.endTime - step.startTime) / 1000)).toFixed(1)}s`}
+                  `${Math.max(
+                    2,
+                    (step.endTime - step.startTime) / 1000
+                  ).toFixed(1)}s`}
                 {step.status === "processing" &&
                   step.startTime &&
-                  `${Math.max(2, ((Date.now() - step.startTime) / 1000)).toFixed(1)}s...`}
+                  `${Math.max(2, (Date.now() - step.startTime) / 1000).toFixed(
+                    1
+                  )}s...`}
               </div>
             </div>
           </div>
@@ -211,7 +246,7 @@ export function useBRSProgress() {
   const completeStep = useCallback((stepId: string) => {
     setSteps((prevSteps) => {
       // Find the current step in the latest state
-      const step = prevSteps.find(s => s.id === stepId);
+      const step = prevSteps.find((s) => s.id === stepId);
       if (!step || step.status !== "processing") {
         return prevSteps.map((s) =>
           s.id === stepId
@@ -219,12 +254,12 @@ export function useBRSProgress() {
             : s
         );
       }
-      
+
       // Calculate how long the step has been processing
       const startTime = step.startTime || Date.now();
       const elapsed = Date.now() - startTime;
       const MIN_STEP_DURATION = 2500; // 2.5 seconds minimum
-      
+
       if (elapsed >= MIN_STEP_DURATION) {
         // If it's been displayed long enough, complete immediately
         return prevSteps.map((s) =>

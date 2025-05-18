@@ -871,16 +871,16 @@ export default function Home() {
     } catch (error: any) {
       console.error("Error in BRS generation flow:", error);
       setImproveBRSError(`Error: ${error.message}`);
-      
+
       // Mark current step as failed
       if (currentStepId) {
         failStep(currentStepId);
       }
-      
+
       // Ensure UI state is properly reset
       console.log("BRS generation error: Resetting UI state");
       setIsGeneratingBRS(false);
-      
+
       // Don't automatically hide the BRS upload UI on error
       // This keeps the error message visible to the user
     }
@@ -929,7 +929,7 @@ export default function Home() {
           const eventData = JSON.parse(dataMatch[1]);
           if (eventData.type === "progress") {
             const p = eventData.data;
-                    // Map IDs and capture filename when completed
+            // Map IDs and capture filename when completed
             if (p.stepId === "filename" && p.status === "completed") {
               const parts = p.message.split(": ");
               if (parts.length > 1) setGeneratedName(parts[1]);
@@ -950,14 +950,21 @@ export default function Home() {
             // Final result - explicitly ensure all steps are completed
             success = eventData.data.success;
             resultData = eventData.data;
-            
+
             // Make sure to complete all steps for successful import
             if (success) {
               // Complete any remaining steps when we get a successful result
-              ['upload', 'filename', 'save', 'overview', 'improve', 'final-save'].forEach(step => {
+              [
+                "upload",
+                "filename",
+                "save",
+                "overview",
+                "improve",
+                "final-save",
+              ].forEach((step) => {
                 completeStep(step);
               });
-              
+
               // We'll handle the UI transition in the if(success && resultData) code block
               // after the while loop completes, where we already have transition logic
             }
@@ -974,10 +981,13 @@ export default function Home() {
         // Ensure all steps are completed when we get success
         completeStep("improve");
         completeStep("final-save");
-        
+
         // Create a new conversation with the result and show chat
-        console.log("BRS process completed successfully, transitioning to chat view with result:", resultData);
-        
+        console.log(
+          "BRS process completed successfully, transitioning to chat view with result:",
+          resultData
+        );
+
         // Create a new conversation based on the result data
         const newConversationId = `conv-${Date.now()}`;
         const documentTitle = resultData.newDocumentName
@@ -1002,16 +1012,18 @@ export default function Home() {
         setConversationHistory((prev) => [...prev, newConversation]);
         setActiveConversationId(newConversationId);
         setMessages(newConversation.messages);
-        
+
         // Refresh recently used documents
         const recentDocs = getRecentDocuments();
         setRecentDocuments(recentDocs);
-        
+
         // Complete the process
-        console.log("BRS generation complete: Setting UI state for transition to chat view");
+        console.log(
+          "BRS generation complete: Setting UI state for transition to chat view"
+        );
         setIsGeneratingBRS(false);
         resetProgress();
-        
+
         // Switch views with a slight delay to allow animations to complete
         setTimeout(() => {
           console.log("BRS SUCCESS: Executing UI transition now");
@@ -1022,10 +1034,12 @@ export default function Home() {
             setShowChat(true);
             setWelcomeOpacity(0);
             setChatOpacity(1);
-            console.log("UI state transition complete: chat view should be visible");
+            console.log(
+              "UI state transition complete: chat view should be visible"
+            );
           }, 100);
         }, 1000); // Slightly longer delay for better reliability
-        
+
         return true;
       }
       return false;
@@ -1041,7 +1055,7 @@ export default function Home() {
           const parts = p.message.split(": ");
           if (parts.length > 1) setGeneratedName(parts[1]);
         }
-        
+
         if (p.status === "started") startStep(p.stepId);
         else if (p.status === "completed") completeStep(p.stepId);
         else if (p.status === "failed") failStep(p.stepId);
@@ -1058,7 +1072,7 @@ export default function Home() {
     if (improveResult.success) {
       // For non-streaming case, follow the same pattern as streaming
       console.log("BRS process (non-streaming) completed successfully");
-      
+
       // Create a new conversation with appropriate title
       const newConversationId = `conv-${Date.now()}`;
       const documentTitle = improveResult.newDocumentName
@@ -1083,16 +1097,18 @@ export default function Home() {
       setConversationHistory((prev) => [...prev, newConversation]);
       setActiveConversationId(newConversationId);
       setMessages(newConversation.messages);
-      
+
       // Refresh document list
       const recentDocs = getRecentDocuments();
       setRecentDocuments(recentDocs);
-      
+
       // Reset BRS generation UI state
-      console.log("BRS generation complete (non-streaming): Setting UI state for transition to chat view");
+      console.log(
+        "BRS generation complete (non-streaming): Setting UI state for transition to chat view"
+      );
       setIsGeneratingBRS(false);
       resetProgress();
-      
+
       // Switch views with a delay to ensure UI state updates properly
       setTimeout(() => {
         console.log("BRS SUCCESS (non-streaming): Executing UI transition now");
@@ -1103,13 +1119,17 @@ export default function Home() {
           setShowChat(true);
           setWelcomeOpacity(0);
           setChatOpacity(1);
-          console.log("UI state transition complete (non-streaming): chat view should be visible");
+          console.log(
+            "UI state transition complete (non-streaming): chat view should be visible"
+          );
         }, 100);
       }, 1000); // Match streaming case delay
 
       return true;
     } else {
-      throw new Error(improveResult.message || "BRS generation process failed.");
+      throw new Error(
+        improveResult.message || "BRS generation process failed."
+      );
     }
   };
 
@@ -1561,9 +1581,11 @@ export default function Home() {
                     Import BRS from Document
                   </h1>
                   <p className="text-xs xs:text-sm sm:text-base text-gray-500 mx-auto max-w-full sm:max-w-2xl">
-                    Upload your meeting notes, existing BRS document, or requirements to create a structured BRS. Our AI will
-                    analyze the content, extract key requirements, organize information, and generate a comprehensive
-                    Business Requirements Specification document.
+                    Upload your meeting notes, existing BRS document, or
+                    requirements to create a structured BRS. Our AI will analyze
+                    the content, extract key requirements, organize information,
+                    and generate a comprehensive Business Requirements
+                    Specification document.
                   </p>
                 </div>
 

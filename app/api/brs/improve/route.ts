@@ -152,13 +152,16 @@ export async function POST(request: NextRequest) {
   // Function to send an update to the client
   // Track if the writer is closed to prevent "Writer is closed" errors
   let isWriterClosed = false;
-  
+
   const sendUpdate = async (update: any) => {
     if (isWriterClosed) {
-      console.log("Stream writer is already closed, skipping update:", update.type);
+      console.log(
+        "Stream writer is already closed, skipping update:",
+        update.type
+      );
       return;
     }
-    
+
     try {
       await writer.write(encoder.encode(formatSSE(update)));
       console.log(`Successfully sent ${update.type} update to client`);
@@ -208,19 +211,25 @@ export async function POST(request: NextRequest) {
       // 5. "Generating content"
       let displayStepId = stepId;
       let displayMessage = message;
-      
+
       // Improved step mapping that exactly matches the required UI flow
-      const stepMapping: Record<string, {uiStep: string, displayName?: string}> = {
-        'upload': { uiStep: 'upload', displayName: 'Upload file' },
-        'convert': { uiStep: 'convert', displayName: 'Parse PDF to Markdown' },
-        'analyze': { uiStep: 'upload', displayName: 'Analyzing document structure' }, 
-        'filename': { uiStep: 'filename', displayName: 'Generate file name' },
-        'save': { uiStep: 'save', displayName: 'Create file' },
-        'overview': { uiStep: 'overview', displayName: 'Plan overview' },
-        'improve': { uiStep: 'improve', displayName: 'Generate content' },
-        'final-save': { uiStep: 'final-save', displayName: 'Save to file' }
+      const stepMapping: Record<
+        string,
+        { uiStep: string; displayName?: string }
+      > = {
+        upload: { uiStep: "upload", displayName: "Upload file" },
+        convert: { uiStep: "convert", displayName: "Parse PDF to Markdown" },
+        analyze: {
+          uiStep: "upload",
+          displayName: "Analyzing document structure",
+        },
+        filename: { uiStep: "filename", displayName: "Generate file name" },
+        save: { uiStep: "save", displayName: "Create file" },
+        overview: { uiStep: "overview", displayName: "Plan overview" },
+        improve: { uiStep: "improve", displayName: "Generate content" },
+        "final-save": { uiStep: "final-save", displayName: "Save to file" },
       };
-      
+
       // Apply the mapping
       if (stepMapping[stepId]) {
         displayStepId = stepMapping[stepId].uiStep;
@@ -228,7 +237,7 @@ export async function POST(request: NextRequest) {
           displayMessage = stepMapping[stepId].displayName;
         }
       }
-      
+
       const update: ProgressUpdate = {
         stepId: displayStepId,
         status,
@@ -434,7 +443,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify(createFilePayload),
         }
       );
-      
+
       // For file creation, a 200 response with error message means file exists
       // This is not a fatal error - we'll handle it by generating an alternative name
       let createFileResult;
@@ -442,15 +451,26 @@ export async function POST(request: NextRequest) {
         createFileResult = await createFileResponse.json();
       } catch (e) {
         const errorMsg = `Failed to parse file creation response: ${createFileResponse.statusText}`;
-        console.error("BRS Improve: Failed to parse file creation response:", e);
+        console.error(
+          "BRS Improve: Failed to parse file creation response:",
+          e
+        );
         await sendUpdate({ type: "error", data: { message: errorMsg } });
         return;
       }
-      
+
       // Only treat it as a fatal error if it's not a file-exists error
-      if (!createFileResponse.ok && !(/already exists/i.test(createFileResult?.message || ""))) {
-        const errorMsg = `Failed to create file record: ${createFileResult?.message || createFileResponse.statusText}`;
-        console.error("BRS Improve: Failed to create file record:", createFileResult);
+      if (
+        !createFileResponse.ok &&
+        !/already exists/i.test(createFileResult?.message || "")
+      ) {
+        const errorMsg = `Failed to create file record: ${
+          createFileResult?.message || createFileResponse.statusText
+        }`;
+        console.error(
+          "BRS Improve: Failed to create file record:",
+          createFileResult
+        );
         await sendUpdate({ type: "error", data: { message: errorMsg } });
         return;
       }
@@ -461,7 +481,11 @@ export async function POST(request: NextRequest) {
 
       // Handle name collision - look for specific error message regardless of success flag
       // First, check if message property exists, then check if it contains 'already exists'
-      if (createFileResult?.message && typeof createFileResult.message === 'string' && /already exists/.test(createFileResult.message)) {
+      if (
+        createFileResult?.message &&
+        typeof createFileResult.message === "string" &&
+        /already exists/.test(createFileResult.message)
+      ) {
         console.warn(
           `BRS Improve: Filename "${finalFilename}" unavailable: ${createFileResult.message}`
         );
@@ -513,21 +537,21 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
         console.log(
           `BRS Improve: Retrying with new filename: "${finalFilename}"`
         );
-        
+
         // Update progress to indicate we're trying with a new filename
         await addProgress(
           "filename",
           "completed",
           `Alternative file name generated: ${finalFilename}`
         );
-        
+
         // Start save step again with the new filename
         await addProgress(
           "save",
           "started",
           `Creating file with new name: ${finalFilename}`
         );
-        
+
         const retryResponse = await fetch(`${API_BASE_URL}/api/files/create`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -538,7 +562,9 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
         if (!retryResponse.ok) {
           try {
             const retryErr = await retryResponse.json();
-            const errorMsg = `Retry create file failed: ${retryErr.message || "Unknown error"}`;
+            const errorMsg = `Retry create file failed: ${
+              retryErr.message || "Unknown error"
+            }`;
             console.error(`BRS Improve: ${errorMsg}`);
             await addProgress("save", "failed", errorMsg);
             await sendUpdate({ type: "error", data: { message: errorMsg } });
@@ -562,14 +588,14 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
             await sendUpdate({ type: "error", data: { message: errorMsg } });
             return;
           }
-          
+
           // Mark save step as completed with the new filename
           await addProgress(
-            "save", 
-            "completed", 
+            "save",
+            "completed",
             `File created successfully with alternative name: ${finalFilename}`
           );
-          
+
           // Update fileId with the new file name
           fileId = retryResult.file_name;
         } catch (parseError) {
@@ -603,11 +629,7 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
       );
 
       // 4. Plan Overview - Generate Implementation Overview
-      await addProgress(
-        "overview",
-        "started",
-        "Creating document blueprint"
-      );
+      await addProgress("overview", "started", "Creating document blueprint");
       console.log("BRS Improve: Generating implementation overview...");
 
       const overviewContent = await callOpenAI(
@@ -631,11 +653,7 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
       console.log("BRS Improve: Overview generated.");
 
       // 5. Generate Content (Improved BRS Content)
-      await addProgress(
-        "improve",
-        "started",
-        "Generating enhanced content"
-      );
+      await addProgress("improve", "started", "Generating enhanced content");
       console.log("BRS Improve: Generating improved BRS content...");
 
       const improvePrompt = `Original BRS Markdown (might be partial or rough):\n\n${markdownContent}\n\nStrictly follow this Implementation Overview to improve the BRS:\n\n${overviewContent}`;
@@ -764,9 +782,13 @@ You can view the improved document in the document library.`,
         if (!isWriterClosed) {
           await writer.close();
           isWriterClosed = true;
-          console.log("BRS Import: Stream closed successfully at end of processing");
+          console.log(
+            "BRS Import: Stream closed successfully at end of processing"
+          );
         } else {
-          console.log("BRS Import: Stream was already closed, skipping close() call");
+          console.log(
+            "BRS Import: Stream was already closed, skipping close() call"
+          );
         }
       } catch (e) {
         console.error("BRS Import: Error closing stream:", e);
