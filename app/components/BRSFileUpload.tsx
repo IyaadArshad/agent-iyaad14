@@ -147,13 +147,13 @@ export default function BRSFileUpload({
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div
-        className={`flex flex-col items-center justify-center w-full h-128 border-2 border-dashed rounded-lg cursor-pointer 
+        className={`flex flex-col transition-all items-center justify-center w-full h-128 border-2 rounded-lg cursor-pointer 
           ${
             isDragging
               ? "border-blue-500 bg-blue-50"
               : "border-gray-300 hover:border-blue-400 hover:bg-blue-100/30"
           } 
-          ${isLoading ? "pointer-events-none" : ""} 
+          ${isLoading ? "pointer-events-none h-full" : "border-dashed"} 
           transition-all duration-200`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

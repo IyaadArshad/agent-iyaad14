@@ -26,7 +26,8 @@ async function callOpenAI(
   systemPrompt: string,
   userPrompt: string,
   isJsonOutput: boolean = false,
-  temperature?: number
+  temperature?: number,
+  max_tokens?: number
 ): Promise<string | null> {
   try {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -37,7 +38,8 @@ async function callOpenAI(
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
       model: model,
       messages: messages,
-      ...(temperature && { temperature })
+      ...(temperature !== undefined && { temperature }),
+      ...(max_tokens !== undefined && { max_tokens }),
     };
 
     if (isJsonOutput && model === "gpt-4.1-nano") {
@@ -60,118 +62,172 @@ async function callOpenAI(
   }
 }
 
+// Process the extracted topics to a more LLM-friendly format
+function processTopicsForPrompt(topicsJson: string): string {
+  try {
+    console.log("processTopicsForPrompt: Received topicsJson:", topicsJson); // Added log
+    const topicsData = JSON.parse(topicsJson);
+    if (
+      !topicsData.items ||
+      !Array.isArray(topicsData.items) ||
+      topicsData.items.length === 0
+    ) {
+      console.log(
+        "processTopicsForPrompt: No structured topics extracted or items array is empty."
+      ); // Added log
+      return "No structured topics were extracted.";
+    }
+
+    // Build a comprehensive outline of topics for the LLM
+    let result = "# REQUIRED TOPICS TO INCLUDE\n\n";
+
+    topicsData.items.forEach((item: any, index: number) => {
+      // Added types
+      // Add main topic
+      result += `## ${index + 1}. ${item.topic}\n`;
+
+      if (item.subtopics && Array.isArray(item.subtopics)) {
+        item.subtopics.forEach((subtopic: any, subIndex: number) => {
+          // Added types
+          // Add subtopic
+          result += `### ${index + 1}.${subIndex + 1}. ${subtopic.subtopic}\n`;
+
+          if (subtopic.subsubtopics && Array.isArray(subtopic.subsubtopics)) {
+            subtopic.subsubtopics.forEach(
+              (subsubtopic: any, subSubIndex: number) => {
+                // Added types
+                // Add sub-subtopic
+                result += `- ${subsubtopic.subsubtopic}\n`;
+              }
+            );
+          }
+          result += "\n";
+        });
+      }
+      result += "\n";
+    });
+
+    console.log("processTopicsForPrompt: Generated result string:", result); // Added log
+    return result;
+  } catch (error) {
+    console.error("Failed to process topics:", error);
+    return "Error processing topics. Please ensure all topics from the original document are covered.";
+  }
+}
+
 // New function to extract topics from markdown content
 async function extractTopics(markdownContent: string): Promise<string> {
   try {
     console.log("Extracting topics from markdown content...");
-    
+
     const response = await openai.responses.create({
       model: "gpt-4.1-nano",
       input: [
         {
-          "role": "system",
-          "content": [
+          role: "system",
+          content: [
             {
-              "type": "input_text",
-              "text": "Identify the top-level modules for a BRS (Business Requirements Specification) document. Focus specifically on identifying the h2 or h3 headings that represent these modules.\n\n# Steps\n\n1. **Read the Document**: Begin by reading through the BRS document to understand its structure and content.\n2. **Identify Headings**: Look for headings that are formatted as h2 or h3. These headings typically designate different sections or modules within the document.\n3. **Select Top-Level Modules**: From the identified h2 or h3 headings, determine which represent the top-level modules. This usually involves discerning main sections or key business requirements.\n4. **List the Modules**: Compile a list of the headings you've identified as top-level modules.\n\n# Output Format\n\n- A bullet point list of the top-level module headings identified within the BRS document.\n\nMake sure to determine modules, modules sub bullet points, and modules sub bullet points sub bullet points.\n\n(Note: Real documents should be longer, and the context should be provided for more comprehensive analysis.) "
-            }
-          ]
+              type: "input_text",
+              text: "Identify the top-level modules for a BRS (Business Requirements Specification) document. Focus specifically on identifying the h2 or h3 headings that represent these modules.\n\n# Steps\n\n1. **Read the Document**: Begin by reading through the BRS document to understand its structure and content.\n2. **Identify Headings**: Look for headings that are formatted as h2 or h3. These headings typically designate different sections or modules within the document.\n3. **Select Top-Level Modules**: From the identified h2 or h3 headings, determine which represent the top-level modules. This usually involves discerning main sections or key business requirements.\n4. **List the Modules**: Compile a list of the headings you've identified as top-level modules.\n\n# Output Format\n\n- A bullet point list of the top-level module headings identified within the BRS document.\n\nMake sure to determine modules, modules sub bullet points, and modules sub bullet points sub bullet points.\n\n(Note: Real documents should be longer, and the context should be provided for more comprehensive analysis.) ",
+            },
+          ],
         },
         {
-          "role": "user",
-          "content": [
+          role: "user",
+          content: [
             {
-              "type": "input_text",
-              "text": `Here's my document: ${markdownContent}`
-            }
-          ]
-        }
+              type: "input_text",
+              text: `Here's my document: ${markdownContent}`,
+            },
+          ],
+        },
       ],
       text: {
-        "format": {
-          "type": "json_schema",
-          "name": "bulleted_list",
-          "strict": true,
-          "schema": {
-            "type": "object",
-            "properties": {
-              "items": {
-                "type": "array",
-                "description": "A list of topics each may have subtopics.",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "topic": {
-                      "type": "string",
-                      "description": "The name or title of the topic."
+        format: {
+          type: "json_schema",
+          name: "bulleted_list",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              items: {
+                type: "array",
+                description: "A list of topics each may have subtopics.",
+                items: {
+                  type: "object",
+                  properties: {
+                    topic: {
+                      type: "string",
+                      description: "The name or title of the topic.",
                     },
-                    "subtopics": {
-                      "type": "array",
-                      "description": "A list of subtopics under the main topic.",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "subtopic": {
-                            "type": "string",
-                            "description": "The name or title of the subtopic."
+                    subtopics: {
+                      type: "array",
+                      description: "A list of subtopics under the main topic.",
+                      items: {
+                        type: "object",
+                        properties: {
+                          subtopic: {
+                            type: "string",
+                            description: "The name or title of the subtopic.",
                           },
-                          "subsubtopics": {
-                            "type": "array",
-                            "description": "A list of subsubtopics under the subtopic.",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "subsubtopic": {
-                                  "type": "string",
-                                  "description": "The name or title of the subsubtopic."
-                                }
+                          subsubtopics: {
+                            type: "array",
+                            description:
+                              "A list of subsubtopics under the subtopic.",
+                            items: {
+                              type: "object",
+                              properties: {
+                                subsubtopic: {
+                                  type: "string",
+                                  description:
+                                    "The name or title of the subsubtopic.",
+                                },
                               },
-                              "required": [
-                                "subsubtopic"
-                              ],
-                              "additionalProperties": false
-                            }
-                          }
+                              required: ["subsubtopic"],
+                              additionalProperties: false,
+                            },
+                          },
                         },
-                        "required": [
-                          "subtopic",
-                          "subsubtopics"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
+                        required: ["subtopic", "subsubtopics"],
+                        additionalProperties: false,
+                      },
+                    },
                   },
-                  "required": [
-                    "topic",
-                    "subtopics"
-                  ],
-                  "additionalProperties": false
-                }
-              }
+                  required: ["topic", "subtopics"],
+                  additionalProperties: false,
+                },
+              },
             },
-            "required": [
-              "items"
-            ],
-            "additionalProperties": false
-          }
-        }
+            required: ["items"],
+            additionalProperties: false,
+          },
+        },
       },
       reasoning: {},
       tools: [],
       temperature: 1,
       max_output_tokens: 32768,
       top_p: 1,
-      store: true
+      store: true,
     });
 
     // Process the response to extract the JSON content
     let topicsJson: string;
-    if (typeof response.text === 'string') {
+    if (response.output_text && typeof response.output_text === "string") {
+      topicsJson = response.output_text;
+    } else if (typeof response.text === "string") {
       topicsJson = response.text;
-    } else if (response.text && typeof response.text === 'object' && 'value' in response.text) {
+    } else if (
+      response.text &&
+      typeof response.text === "object" &&
+      "value" in response.text
+    ) {
       topicsJson = response.text.value as string;
     } else {
-      console.error("Unexpected response format from topic extraction:", response);
+      console.error(
+        "Unexpected response format from topic extraction (could not find output_text, response.text string, or response.text.value):",
+        response
+      );
       throw new Error("Failed to extract topics: unexpected response format");
     }
 
@@ -181,6 +237,14 @@ async function extractTopics(markdownContent: string): Promise<string> {
     console.error("Error extracting topics:", err);
     throw new Error("Failed to extract topics from markdown content");
   }
+}
+
+// Helper to convert slug to Title Case
+function slugToTitle(slug: string): string {
+  return slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 // System Prompts
@@ -209,7 +273,7 @@ const SYSTEM_PROMPT_OVERVIEW = `You are an expert Business Requirements Specific
 
 6. Make each step precise (2–3 sentences max), unambiguous, and exhaustive so developers have no assumptions left. Think as deeply as possible about every requirement, module, and screen implied by the input document.
 
-This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown.
+This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown format.
 
 Transform and elevate BRS documents by creating a polished, detailed implementation plan in Markdown format.
 
@@ -283,39 +347,101 @@ Expected JSON Output:
 {"suggested_title": "user-authentication-module-brs"}
 `;
 
-const SYSTEM_PROMPT_IMPROVE_BRS = `You are an AI assistant specializing in the detailed refinement and generation of Business Requirement Specifications (BRS). You will be provided with an original BRS document (in Markdown) and a step-by-step implementation overview. Your task is to meticulously rewrite and enhance the original BRS, strictly following the guidance in the implementation overview.
-The final BRS must be:
-- Comprehensive, detailed, and unambiguous.
-- Clearly structured with appropriate Markdown headings (e.g., #, ##, ###), sections, lists, and tables where necessary.
-- Professionally written, concise, and easy to understand. Technical jargon should be minimized or clearly explained.
-- Internally consistent and logically flowing.
-- Fully address all points, suggestions, and required changes outlined in the implementation overview.
-- Formatted exclusively in Markdown.
+const SYSTEM_PROMPT_IMPROVE_BRS = `You are an elite BRS development specialist responsible for creating comprehensive, detailed Business Requirement Specifications that are implementation-ready. You will transform an original document and implementation overview into a meticulously structured, thorough BRS document.
 
-Output ONLY the improved BRS document in Markdown format. Do not include any additional text, preambles, summaries, or explanations outside of the Markdown document itself.
+# CRITICAL SYSTEM REQUIREMENTS
 
-For your reference, read the format of a brs: "Start with a concise, simple H1 title (#) that uses 4-5 words (Example: MIS Control Module), it should sound professional, next, an BRS really just consists of different screens. Most BRS\'s have more than 10 screens - that\'s alot! A BRS is just a document that consists of different screens. Each screen has 4 sections. The first is the H2 (##) Heading that is the name of the screen. It is numbered, so the heading is prefixed with a 1. or 2. or 3. etc. It is a short 2-6 word of what the title does. If the screen is part of a larger screen (by context), the current smaller section is in brackets. Think carefully about using this. This would be like the users page, but the current screen is that of a new transaction, this would be "Users (New User)", other examples include "Sales (List View)", "Sales Manager (New Transaction)" etc. The second part of a screen is some extra information. It is usually a simple paragraph explaining the screen. You may use bold text, italics, bullet points or other visual aids to accompany this paragraph in this second section. It needs to be a brief overview. Use simple language that gets the point across without being unprofessional. The third section is the diagram. If this is a UI based function, then you add a diagram with a json markdown code block containing json {"brsDiagram": {}} The fourth and last section of every screen is the extra data. This is the last section, but it the main part of the screen information. It contains all the details and specifications, you must break down, decompose, and fully explain everything that the screen does, including explaining individual functions, adding tables or bullet points to specify data types, validation, inputs etc. You will also break it down fully for each module, each screen has modules and each models must have a properly explained inputs, processes, and outputs. There will always be some for of a short 1-2  sentence description in 1 or 2 lines too.  This could be adding a table for some sample data, tables to specify form field types, bullet points for extra info, etc. If sample data is there, make sure it is at least 7 rows.  Remember the format of the BRS markdown correctly as outlined above. Strictly follow this. You will not use bullet points to display lists with only 1 item, they should never feel empty. Never use the word description or title with a colon to state the title or description. That is implicit with the heading, subheading, and paragraph format outlined here. Remember to use the format of the BRS markdown correctly as outlined above. EXTEMELY IMPORTANT: You should be expected to think beyond what you were asked to do. You must assume and think hard about what the users requirements are, what the user implicitly might want too and add it in. Be detailed about it. For example, if you are asked to "create a one screen library management system only tracking books using crud for storage". Think about every possible function, module down the the very bottom on what the screen/function might be expected to do. Make sure in the brs document you have broken it down as much as possible. For the example, you should create a screen and have individual modules for each function of the screen, creating book entry, updating book details, deleting books, reading books details, etc. each module should contain the inputs, how its meant to be processed the outputs, you should leave no room for assumption for the developer reading the brs, you should be extremely specific and assume details you doesn't know. in the module example for example, you should explain how the module processes user input and how it displays output and, plans for the ui, for example in the read books module it suggests a plan for example you could add "
-1. The user would be required to input the name of the book they are querying
-2. The system uses CRUD operation read to fetch attributes IBAN, Name, and Blurb of the book
-4. The system should validate the input to ensure the book name exists in the database.
-5. If the book name is found, the system retrieves the book details including IBAN, Name, Blurb, and Tags.
-6. The retrieved details are displayed in a user-friendly format on the UI.
-7. If the book name is not found, the system should display an appropriate error message to the user.
-8. The UI should provide an option to go back to the main menu or perform another search.
-" Understand this example and think hard about the kind of BRS quality I expect. Know that this is an example and it is different depending on each users requests, but understand what I mean by you should go the extra mile to be specific. Remember that previously the user is used to spending 4 weeks detailing everything specifically and working on it. You should not just create a document with simply what they put. It needs to be extremely specific, detailed and follow requirements. Make sure to include sample data in a table where you think it will look good. All tables must have at least 7 rows. You should never have a BRS that feels empty or looks empty or spaced out. it is not meant to be minimalist, it is meant to be detailed to the core. Make sure a BRS never looks empty to anyone." understand and now remember how a brs is structured and write the brs with this mindset
-ONLY AND ONLY OUTPUT THE DOCUMENT BACK TO ME, DO NOT OUTPUT ANYTHING ELSE, I WANT NO EXPLANATION OF WHAT YOU DID OR WHAT IT IS ABOUT, I WANT ONLY THE DOCUMENT CONTENTS. YOUR OUTPUT WILL DIRECTLY BE SAVED TO THE BRS FILE. DO NOT SAY ANYTHING EXCEPT FOR THE FILE CONTENTS. Thank you :)
+1. INCLUSIVE CONTENT REQUIREMENT: You MUST include EVERY SINGLE topic, subtopic, and sub-subtopic identified in the document. Nothing can be omitted.
 
-# IMPORTANT: COMPREHENSIVE CONTENT REQUIREMENTS
+2. MULTI-MODULE COMPLETENESS: Generate COMPLETE content for ALL modules. DO NOT focus only on the first module or create inconsistent detail levels across modules.
 
-1. You MUST include detailed coverage for ALL topics, subtopics, and sub-subtopics provided in the implementation overview.
-2. Each module MUST have clearly defined:
-   - Detailed inputs with validation rules and data types
-   - Specific process steps that explain the exact logic and transformations
-   - Comprehensive outputs with format specifications
-3. DO NOT lose any formulas, calculations, or technical specifics from the original document.
-4. ALL tables MUST have a minimum of 7 rows with realistic, varied sample data.
-5. Every screen MUST include a complete breakdown of its functionality with no assumptions left for developers.
-6. Never simplify or abbreviate content - the BRS should be extremely thorough and detailed in every section.`;
+3. STRUCTURED FORMAT: Follow proper BRS structure:
+   - Start with a concise H1 title
+   - Each screen has numbered H2 headings
+   - Include overview paragraphs, diagram placeholders, and detailed specifications
+   - All sections must be properly nested and hierarchically organized
+
+4. COMPREHENSIVE DETAIL: For EACH module:
+   - Create detailed inputs with field definitions, types, validation rules, and sample data
+   - Specify precise process steps with logic flows and data transformations
+   - Document comprehensive outputs with format specifications
+   - Include 7+ rows in all tables with realistic, varied sample data
+
+5. NO ASSUMPTIONS: Leave no implementation details to interpretation. Document every validation rule, error state, edge case, and business logic consideration.
+
+6. FULL COVERAGE VERIFICATION: Before completing generation, verify that:
+   - ALL topics from the extracted list are represented
+   - ALL modules have consistent, thorough documentation
+   - No sections appear incomplete or less detailed than others
+
+# IMPLEMENTATION GUIDELINES
+
+For EACH module identified in the topics list:
+1. Create a distinct section starting with an H1 heading
+2. Include ALL screens related to that module with H2 headings
+3. Ensure EVERY screen contains:
+   - A numbered heading with a clear title
+   - A detailed overview paragraph explaining purpose and function
+   - A diagram placeholder in JSON format
+   - Comprehensive "Extra Data" detailing inputs, processes, and outputs
+
+For EACH subtopic, create proper H3 headings with detailed explanations.
+For EACH sub-subtopic, create either H4 headings or include as structured content under the relevant subtopic.
+
+EXPAND every element from the extracted topics into a fully developed component with:
+- Comprehensive specifications
+- Data validation rules
+- Process flows
+- Sample data tables with 7+ rows
+- Edge case handling
+
+ENSURE that later modules receive the SAME level of detail as earlier ones.
+
+# OUTPUT REQUIREMENTS
+
+- Start with an H1 heading containing the document title
+- Include ONLY the Markdown content of the BRS document
+- Do not include explanations, introductions, or commentary outside the document itself
+- Every module must be fully developed regardless of its position in the document
+- Content must be technically precise, comprehensive, and implementation-ready
+
+# VERIFICATION PROCESS
+
+Before submission, verify that:
+1. EVERY topic from the extracted list has been expanded into a detailed component
+2. ALL modules have consistent, comprehensive coverage
+3. No sections appear truncated or less detailed than others
+4. The document meets all structural and formatting requirements
+5. Sample data tables have 7+ rows of realistic, varied data
+
+OUTPUT ONLY THE IMPROVED BRS DOCUMENT IN MARKDOWN. NO EXPLANATIONS, ONLY CONTENT.`;
+
+// System Prompt for detailed single-module BRS section generation
+const SYSTEM_PROMPT_MODULE = `You are a high-precision BRS module generator specializing in creating comprehensive, detailed Markdown sections for business modules based on specified titles and subtopics.
+
+Your output MUST:
+1. Start with a numbered H2 heading corresponding to the module sequence and title (e.g., "## 1. Module Title").
+2. Provide a thorough overview paragraph (2-5 sentences) explaining the purpose, scope, and importance of the module within the overall system.
+3. Include a JSON diagram placeholder in a Markdown code fence:
+\`\`\`json
+{"brsDiagram": {}}
+\`\`\`
+4. Provide an "### Extra Data" section containing:
+   - **Inputs**: A detailed Markdown table with at least 7 rows, each row specifying Field, Type, Validation, Description, and Sample Value.
+   - **Processes**: A comprehensive numbered list detailing precisely how each subtopic and sub-subtopic is processed or validated within the module, with each point containing 1-3 sentences of implementation details.
+   - **Outputs**: A detailed list describing output data formats, validation procedures, error handling, and display formatting for each process.
+5. For each subtopic mentioned in the input:
+   - Create appropriate H3 headings (e.g., "### 1.1 Subtopic Name")
+   - Detail its specific purpose and functionality
+   - Include any necessary tables, lists, or validation rules
+   - Ensure at least 7 rows of sample data in any tables
+6. For each sub-subtopic:
+   - Create appropriate H4 headings or well-structured sections under the relevant subtopic
+   - Provide comprehensive implementation details with no ambiguity
+   - Include ALL requirements mentioned in the original document and implementation overview
+7. Ensure all content is technically precise, comprehensive, and follows best practices for BRS documentation.
+
+Output only the Markdown for this module section with no additional commentary or explanation. Your output should be detailed enough that developers can implement the module with minimal clarification needed.`;
 
 // Progress tracking interface for client feedback
 import {
@@ -551,25 +677,33 @@ export async function POST(request: NextRequest) {
       // NEW STEP: Extract topics from the document
       await addProgress("topics", "started", "Extracting document topics");
       console.log("BRS Improve: Extracting topics from document...");
-      
+
       let extractedTopics;
+      let processedTopics = "";
       try {
         extractedTopics = await extractTopics(markdownContent);
+        processedTopics = processTopicsForPrompt(extractedTopics);
         await addProgress(
-          "topics", 
-          "completed", 
+          "topics",
+          "completed",
           "Topics extracted successfully"
         );
         console.log("BRS Improve: Topics extracted successfully");
       } catch (error) {
         console.error("Failed to extract topics:", error);
         await addProgress(
-          "topics", 
-          "failed", 
+          "topics",
+          "failed",
           "Failed to extract document topics"
         );
         // Continue with the process even if topic extraction fails
         extractedTopics = JSON.stringify({ items: [] });
+        processedTopics =
+          "Error extracting topics. Please ensure comprehensive coverage of all document sections.";
+        console.log(
+          "BRS Improve: Proceeding with empty/error topics after failure:",
+          processedTopics
+        ); // Added log
       }
 
       // 1. First step: Upload file is already complete at this point
@@ -855,14 +989,15 @@ ${markdownContent}
 
 The following topics have been extracted from the document and MUST be included in your implementation plan:
 
-${extractedTopics}
+${processedTopics}
 
-Please ensure your implementation plan covers ALL these topics comprehensively.`;
+IMPORTANT INSTRUCTION: Your implementation plan must include specific steps for EVERY topic and subtopic listed above. Each topic represents a key module that must be fully documented in the BRS. Do not focus only on the first module - ensure equal detail and comprehensive coverage for ALL modules.`;
 
       const overviewContent = await callOpenAI(
         "o4-mini",
         SYSTEM_PROMPT_OVERVIEW,
-        overviewPrompt
+        overviewPrompt,
+        false // o4-mini is a reasoning model, it does not support temperature or max tokens
       );
 
       if (!overviewContent) {
@@ -879,42 +1014,240 @@ Please ensure your implementation plan covers ALL these topics comprehensively.`
       );
       console.log("BRS Improve: Overview generated.");
 
-      // 5. Generate Content (Improved BRS Content) with extracted topics
-      await addProgress("improve", "started", "Generating enhanced content");
-      console.log("BRS Improve: Generating improved BRS content...");
-
-      const improvePrompt = `Original BRS Markdown (might be partial or rough):
-
-${markdownContent}
-
-Extracted topics that MUST be comprehensively covered:
-
-${extractedTopics}
-
-Strictly follow this Implementation Overview to improve the BRS:
-
-${overviewContent}`;
-
-      const improvedBrsContent = await callOpenAI(
-        "o4-mini",
-        SYSTEM_PROMPT_IMPROVE_BRS,
-        improvePrompt
-      );
-
-      if (!improvedBrsContent) {
-        const errorMsg = "Failed to generate improved BRS content";
-        await addProgress("improve", "failed", errorMsg);
-        console.error("BRS Improve: Failed to generate improved BRS content.");
-        await sendUpdate({ type: "error", data: { message: errorMsg } });
-        return;
-      }
-
+      // 5. Generate Improved BRS Content (Chunked by module)
       await addProgress(
         "improve",
-        "completed",
-        "Content generated successfully"
+        "started",
+        "Generating improved BRS content per module"
       );
-      console.log("BRS Improve: Improved BRS content generated.");
+      console.log("BRS Improve: Generating improved BRS content per module...");
+
+      let improvedBrsContent = "";
+
+      try {
+        // Determine document title
+        const documentTitle = slugToTitle(suggestedTitle);
+        improvedBrsContent += `# ${documentTitle}\n\n`;
+
+        // Parse extracted topics JSON
+        const topicsList = JSON.parse(extractedTopics).items as Array<{
+          topic: string;
+          subtopics: any[];
+        }>;
+
+        // Iterate through each module (topic) using proper async handling
+        console.log(`BRS Improve: Starting generation for ${topicsList.length} modules...`);
+        
+        // Define helper function outside the try-catch block to comply with strict mode
+        const generateModuleContent = async (moduleItem: { topic: string; subtopics: any[] }, index: number): Promise<string | null> => {
+          try {
+            console.log(`BRS Improve: Generating content for module ${index + 1}/${topicsList.length}: ${moduleItem.topic}`);
+            await sendUpdate({
+              type: "progress",
+              data: {
+                stepId: "improve",
+                status: "progress",
+                message: `Generating module ${index + 1}/${topicsList.length}: ${moduleItem.topic}`,
+                timestamp: Date.now(),
+              }
+            });
+            
+            // Enhanced module prompt with more context
+            const modulePrompt = `
+Implementation Overview:
+${overviewContent}
+
+Original Document:
+${markdownContent}
+
+Module Title: "${moduleItem.topic}" (Module ${index + 1} of ${topicsList.length})
+
+Subtopics and Sub-Subtopics: 
+${JSON.stringify(moduleItem.subtopics, null, 2)}
+
+Important Instructions:
+1. Create a DETAILED and COMPLETE section for this module
+2. Include ALL subtopics and sub-subtopics listed above
+3. Ensure each item has comprehensive specifications
+4. This module must be implemented with the same detail level regardless of its position in the document
+`;
+            
+            // Try first with o4-mini for best results with high reasoning
+            try {
+              const miniResponse = await openai.chat.completions.create({
+                model: "o4-mini",
+                reasoning_effort: "high",
+                messages: [
+                  { role: "system", content: SYSTEM_PROMPT_MODULE },
+                  { role: "user", content: modulePrompt }
+                ]
+              });
+              
+              const content = miniResponse.choices[0]?.message?.content;
+              if (content && content.length > 300) {
+                console.log(`BRS Improve: Successfully generated module ${index + 1} with o4-mini (${content.length} chars)`);
+                return content;
+              }
+              console.log(`BRS Improve: o4-mini response too short (${content?.length || 0} chars), falling back to gpt-4o`);
+            } catch (err) {
+              console.warn(`BRS Improve: o4-mini generation failed for module ${index + 1}, falling back to gpt-4o:`, err);
+            }
+            
+            // Fall back to gpt-4o with higher temperature for richer detail
+            const moduleContent = await callOpenAI(
+              "gpt-4o",
+              SYSTEM_PROMPT_MODULE,
+              modulePrompt,
+              false,
+              0.7,
+              6000
+            );
+            
+            if (!moduleContent || moduleContent.length < 300) {
+              throw new Error(`Generated content for module ${index + 1} is too short or empty`);
+            }
+            
+            console.log(`BRS Improve: Successfully generated module ${index + 1} with gpt-4o (${moduleContent.length} chars)`);
+            return moduleContent;
+          } catch (error) {
+            console.error(`BRS Improve: Failed to generate module ${index + 1}: ${moduleItem.topic}`, error);
+            return null;
+          }
+        };
+        
+        // Process modules sequentially to ensure reliable completion and avoid token limits
+        for (let i = 0; i < topicsList.length; i++) {
+          const moduleContent = await generateModuleContent(topicsList[i], i);
+          
+          if (moduleContent) {
+            improvedBrsContent += moduleContent + "\n\n";
+          } else {
+            // If module generation failed, create a minimal placeholder to maintain structure
+            const placeholderContent = `## ${i + 1}. ${topicsList[i].topic}\n\nThis module requires further detailed specification.\n\n\`\`\`json\n{"brsDiagram": {}}\n\`\`\`\n\n### Extra Data\n\n**Note:** This module's content needs to be expanded with proper inputs, processes, and outputs.\n\n`;
+            improvedBrsContent += placeholderContent;
+            
+            // Try with a simplified approach as final fallback
+            try {
+              const fallbackContent = await callOpenAI(
+                "gpt-4.1-nano",
+                `Create a simple BRS module section for "${topicsList[i].topic}" with basic headings, a diagram placeholder, and minimal structure.`,
+                `Module: ${topicsList[i].topic}\nSubtopics: ${JSON.stringify(topicsList[i].subtopics)}`,
+                false,
+                1.0,
+                2000
+              );
+              
+              if (fallbackContent && fallbackContent.length > 100) {
+                // Replace the placeholder with the fallback content
+                improvedBrsContent = improvedBrsContent.replace(placeholderContent, fallbackContent + "\n\n");
+              }
+            } catch (fallbackErr) {
+              console.error(`BRS Improve: Fallback generation also failed for module ${i + 1}`, fallbackErr);
+            }
+          }
+        }
+
+        console.log("BRS Improve: All module sections generated successfully");
+      } catch (err) {
+        console.error("Error generating improved BRS per module:", err);
+        
+        // Implement a more robust fallback strategy similar to the old API
+        console.log("BRS Improve: Module-by-module generation failed, implementing robust fallback strategy");
+        
+        await sendUpdate({
+          type: "progress",
+          data: {
+            stepId: "improve",
+            status: "progress",
+            message: "Module generation failed, implementing fallback strategy",
+            timestamp: Date.now(),
+          }
+        });
+        
+        // Strategy 1: Try with o4-mini for the full document
+        try {
+          console.log("BRS Improve: Attempting fallback with o4-mini and high reasoning");
+          
+          const response = await openai.chat.completions.create({
+            model: "o4-mini",
+            reasoning_effort: "high",
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT_IMPROVE_BRS },
+              { role: "user", content: overviewPrompt }
+            ]
+          });
+          
+          const content = response.choices[0]?.message?.content;
+          if (content && typeof content === 'string' && content.length > 1000) {
+            console.log(`BRS Improve: Successfully generated full document with o4-mini (${content.length} chars)`);
+            improvedBrsContent = content;
+            return;
+          }
+          console.log("BRS Improve: o4-mini fallback failed, trying next approach");
+        } catch (reasoningError) {
+          console.error("BRS Improve: o4-mini fallback failed with error:", reasoningError);
+          // Continue to next fallback
+        }
+        
+        // Strategy 2: Extract topics again and try to generate content for all at once
+        try {
+          console.log("BRS Improve: Attempting to regenerate content with all topics");
+          
+          // Re-extract topics if needed or use the ones we have
+          let moduleNames: string[] = [];
+          try {
+            // Try to use the extracted topics we already have
+            if (extractedTopics && typeof extractedTopics === 'string') {
+              const parsedTopics = JSON.parse(extractedTopics);
+              if (parsedTopics.items && Array.isArray(parsedTopics.items)) {
+                moduleNames = parsedTopics.items.map((item: { topic: string }) => item.topic);
+              }
+            }
+          } catch (parseError) {
+            console.warn("Failed to parse extracted topics for fallback:", parseError);
+            // Default empty list will be used if parsing fails
+          }
+          
+          // Create a comprehensive prompt that explicitly mentions all modules
+          const allModulesPrompt = `
+${overviewPrompt}
+
+CRITICAL INSTRUCTION: You MUST include comprehensive content for ALL of these modules:
+${JSON.stringify(moduleNames, null, 2)}
+
+Do NOT focus only on the first module. Generate COMPLETE sections for EACH module listed above.
+Each module MUST have proper structure with headings, diagrams, and detailed specifications.`;
+
+          improvedBrsContent = (await callOpenAI(
+            "gpt-4o",
+            SYSTEM_PROMPT_IMPROVE_BRS,
+            allModulesPrompt,
+            false,
+            0.7,
+            12000
+          )) as string;
+          
+          if (!improvedBrsContent || improvedBrsContent.length < 1000) {
+            throw new Error("Generated content is too short or empty");
+          }
+          
+          console.log(`BRS Improve: Successfully generated content with combined approach (${improvedBrsContent.length} chars)`);
+          return;
+        } catch (combinedError) {
+          console.error("BRS Improve: Combined approach failed:", combinedError);
+        }
+        
+        // Final fallback: Traditional monolithic generation
+        console.log("BRS Improve: Falling back to standard full-document generation");
+        improvedBrsContent = (await callOpenAI(
+          "gpt-4o",
+          SYSTEM_PROMPT_IMPROVE_BRS,
+          overviewPrompt,
+          false,
+          0.5,
+          8192
+        )) as string;
+      }
 
       // 6. Save to file (Save Improved BRS Content)
       await addProgress("final-save", "started", "Saving to file");
