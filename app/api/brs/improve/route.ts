@@ -10,6 +10,56 @@ const openai = new OpenAI({
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
+// New System Prompt for Module Extraction
+const SYSTEM_PROMPT_EXTRACT_MODULES = `You are an assistant that analyzes BRS (Business Requirements Specification) documents in Markdown format.
+Your task is to identify and list the main module titles from the provided document content.
+
+GUIDELINES FOR MODULE IDENTIFICATION:
+1. Modules are typically represented by top-level headings (H1 or very important H2 headings).
+2. Focus on distinct functional areas or major sections of the BRS.
+3. A module title typically describes a major system component, like "USER MANAGEMENT MODULE" or "INVENTORY CONTROL SYSTEM".
+4. Headings that are clearly sub-sections or screens of another module should NOT be included.
+5. Look for headings that group related functionality together.
+6. Normalize module titles by removing numbering and standardizing capitalization.
+
+Respond with a JSON object containing a single key "module_names", which is an array of strings.
+Each string in the array should be a main module title found in the document.
+If no clear modules are found, or the document is too short to identify distinct modules, return an empty array.
+
+Example Input (User Prompt - part of the document content):
+# Main BRS Title
+
+## 1. User Management Module
+...
+## 2. Inventory Control System
+...
+### 2.1 Stock Intake
+...
+## 3. Reporting Dashboard
+...
+
+Expected JSON Output:
+{"module_names": ["USER MANAGEMENT MODULE", "INVENTORY CONTROL SYSTEM", "REPORTING DASHBOARD"]}
+
+Another Example Input (User Prompt - short document):
+# Quick Idea
+Just a brief note about a feature.
+
+Expected JSON Output:
+{"module_names": []}
+
+Example with typical BRS structure:
+# SALES MODULE
+## 1. Sales Order Entry
+## 2. Customer Management
+# INVENTORY MODULE
+## 1. Stock Management 
+## 2. Warehouse Operations
+
+Expected JSON Output:
+{"module_names": ["SALES MODULE", "INVENTORY MODULE"]}
+`;
+
 interface OpenAIError extends Error {
   status?: number;
   error?: {
@@ -42,7 +92,7 @@ async function callOpenAI(
       ...(max_tokens !== undefined && { max_tokens }),
     };
 
-    if (isJsonOutput && model === "gpt-4.1-nano") {
+    if (isJsonOutput && (model === "gpt-4.1-nano" || model === "gpt-4o")) {
       params.response_format = { type: "json_object" };
     }
 
@@ -62,180 +112,32 @@ async function callOpenAI(
   }
 }
 
-// Process the extracted topics to a more LLM-friendly format
-function processTopicsForPrompt(topicsJson: string): string {
+// New helper function to get module names
+async function getModuleNamesFromDocument(markdownContent: string): Promise<string[]> {
+  console.log("BRS Improve: Identifying module names from document...");
+  const userPrompt = `Document content:\n\n${markdownContent}`;
   try {
-    console.log("processTopicsForPrompt: Received topicsJson:", topicsJson); // Added log
-    const topicsData = JSON.parse(topicsJson);
-    if (
-      !topicsData.items ||
-      !Array.isArray(topicsData.items) ||
-      topicsData.items.length === 0
-    ) {
-      console.log(
-        "processTopicsForPrompt: No structured topics extracted or items array is empty."
-      ); // Added log
-      return "No structured topics were extracted.";
-    }
+    // Using gpt-4.1-nano as it's good for structured JSON output and should be sufficient for this task.
+    // If it struggles, o4-mini could be an alternative.
+    const responseJson = await callOpenAI(
+      "gpt-4.1-nano", 
+      SYSTEM_PROMPT_EXTRACT_MODULES,
+      userPrompt,
+      true // Expect JSON output
+    );
 
-    // Build a comprehensive outline of topics for the LLM
-    let result = "# REQUIRED TOPICS TO INCLUDE\n\n";
-
-    topicsData.items.forEach((item: any, index: number) => {
-      // Added types
-      // Add main topic
-      result += `## ${index + 1}. ${item.topic}\n`;
-
-      if (item.subtopics && Array.isArray(item.subtopics)) {
-        item.subtopics.forEach((subtopic: any, subIndex: number) => {
-          // Added types
-          // Add subtopic
-          result += `### ${index + 1}.${subIndex + 1}. ${subtopic.subtopic}\n`;
-
-          if (subtopic.subsubtopics && Array.isArray(subtopic.subsubtopics)) {
-            subtopic.subsubtopics.forEach(
-              (subsubtopic: any, subSubIndex: number) => {
-                // Added types
-                // Add sub-subtopic
-                result += `- ${subsubtopic.subsubtopic}\n`;
-              }
-            );
-          }
-          result += "\n";
-        });
+    if (responseJson) {
+      const parsed = JSON.parse(responseJson);
+      if (parsed.module_names && Array.isArray(parsed.module_names)) {
+        console.log("BRS Improve: Module names identified:", parsed.module_names);
+        return parsed.module_names.filter((name: any) => typeof name === 'string'); // Explicitly type 'name' as any or string
       }
-      result += "\n";
-    });
-
-    console.log("processTopicsForPrompt: Generated result string:", result); // Added log
-    return result;
-  } catch (error) {
-    console.error("Failed to process topics:", error);
-    return "Error processing topics. Please ensure all topics from the original document are covered.";
-  }
-}
-
-// New function to extract topics from markdown content
-async function extractTopics(markdownContent: string): Promise<string> {
-  try {
-    console.log("Extracting topics from markdown content...");
-
-    const response = await openai.responses.create({
-      model: "gpt-4.1-nano",
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: "Identify the top-level modules for a BRS (Business Requirements Specification) document. Focus specifically on identifying the h2 or h3 headings that represent these modules.\n\n# Steps\n\n1. **Read the Document**: Begin by reading through the BRS document to understand its structure and content.\n2. **Identify Headings**: Look for headings that are formatted as h2 or h3. These headings typically designate different sections or modules within the document.\n3. **Select Top-Level Modules**: From the identified h2 or h3 headings, determine which represent the top-level modules. This usually involves discerning main sections or key business requirements.\n4. **List the Modules**: Compile a list of the headings you've identified as top-level modules.\n\n# Output Format\n\n- A bullet point list of the top-level module headings identified within the BRS document.\n\nMake sure to determine modules, modules sub bullet points, and modules sub bullet points sub bullet points.\n\n(Note: Real documents should be longer, and the context should be provided for more comprehensive analysis.) ",
-            },
-          ],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `Here's my document: ${markdownContent}`,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "bulleted_list",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              items: {
-                type: "array",
-                description: "A list of topics each may have subtopics.",
-                items: {
-                  type: "object",
-                  properties: {
-                    topic: {
-                      type: "string",
-                      description: "The name or title of the topic.",
-                    },
-                    subtopics: {
-                      type: "array",
-                      description: "A list of subtopics under the main topic.",
-                      items: {
-                        type: "object",
-                        properties: {
-                          subtopic: {
-                            type: "string",
-                            description: "The name or title of the subtopic.",
-                          },
-                          subsubtopics: {
-                            type: "array",
-                            description:
-                              "A list of subsubtopics under the subtopic.",
-                            items: {
-                              type: "object",
-                              properties: {
-                                subsubtopic: {
-                                  type: "string",
-                                  description:
-                                    "The name or title of the subsubtopic.",
-                                },
-                              },
-                              required: ["subsubtopic"],
-                              additionalProperties: false,
-                            },
-                          },
-                        },
-                        required: ["subtopic", "subsubtopics"],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: ["topic", "subtopics"],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: ["items"],
-            additionalProperties: false,
-          },
-        },
-      },
-      reasoning: {},
-      tools: [],
-      temperature: 1,
-      max_output_tokens: 32768,
-      top_p: 1,
-      store: true,
-    });
-
-    // Process the response to extract the JSON content
-    let topicsJson: string;
-    if (response.output_text && typeof response.output_text === "string") {
-      topicsJson = response.output_text;
-    } else if (typeof response.text === "string") {
-      topicsJson = response.text;
-    } else if (
-      response.text &&
-      typeof response.text === "object" &&
-      "value" in response.text
-    ) {
-      topicsJson = response.text.value as string;
-    } else {
-      console.error(
-        "Unexpected response format from topic extraction (could not find output_text, response.text string, or response.text.value):",
-        response
-      );
-      throw new Error("Failed to extract topics: unexpected response format");
     }
-
-    console.log("Topics extracted successfully");
-    return topicsJson;
-  } catch (err) {
-    console.error("Error extracting topics:", err);
-    throw new Error("Failed to extract topics from markdown content");
+    console.warn("BRS Improve: Could not parse module names or 'module_names' array not found/valid.");
+    return [];
+  } catch (error) {
+    console.error("BRS Improve: Error identifying module names:", error);
+    return []; // Return empty array on error
   }
 }
 
@@ -248,75 +150,50 @@ function slugToTitle(slug: string): string {
 }
 
 // System Prompts
-const SYSTEM_PROMPT_OVERVIEW = `You are an expert Business Requirements Specification (BRS) engineer. You will be provided with a raw BRS document in Markdown. Your task is to generate an in-depth, step-by-step implementation overview that uncovers and maps every aspect of the submitted document.
+const SYSTEM_PROMPT_OVERVIEW = `You are an expert Business Requirements Specification (BRS) engineer. You will be provided with a raw BRS document in Markdown. Your task is to generate an in-depth, step-by-step implementation overview that uncovers and maps every aspect of the submitted document for improvement.
 
 1. Begin with a single first-person sentence under 30 words: "I'll generate a comprehensive implementation plan for improving this BRS document," and nothing else on that line.
 
-2. Analyze the full document structure: detect all H1 modules, H2 screen sections, sub-screens, lists, tables, calculations, functions, and notes.
+2. Analyze the full document structure: 
+   - Strictly identify main MODULES as H1 headers (e.g., "# USER MANAGEMENT MODULE")
+   - Identify SCREENS as H2 headers (e.g., "## 1. User Registration Screen")
+   - Clearly differentiate between modules (major system components) and screens (UI interfaces)
+   - Map all sub-screens, lists, tables, calculations, functions, and notes
 
 3. Provide a header "Step-by-step changes:" then a concise paragraph stating you will list concrete actions. Below, produce a numbered list of 10–14 items where each step:
    a. References exact document elements (e.g., specific H1 module titles like "STOCK & SALES MODULE," H2 sections such as "Common," "Master Files," "Transaction," etc.).
-   b. Identifies any missing or implicit screens, modules, calculations, or functions and instructs where to add or refine them.
-   c. Describes structural improvements: adding or restructuring headings (H1, H2, H3) to accurately represent screens and nested contexts.
-   d. Specifies where to enhance content: refine descriptive paragraphs, enforce bullet and table standards (minimum 7 rows), ensure sample data is meaningful.
-   e. Calls out where to insert or update JSON code-block diagrams (\`\`\`json
-{"brsDiagram": { ... }}
-\`\`\`) and labels their placement.
-   f. Defines the four mandatory sections per screen: numbered H2 title, overview bullet points, diagram section, and module breakdown (Inputs / Processes / Outputs) with validation rules and sample data tables.
-   g. Highlights consistency checks: uniform numbering, naming conventions, formatting of lists and tables, and alignment with BRS best practices.
-   h. Advises addressing ambiguities: flag missing audit trails, permission flows, error-handling states, UI transitions, pagination, search, and authorization.
-   i. Anticipates implicit requirements: CRUD operations, user roles, group-based controls, decimal precision, GPS tracking, integration points, and automated processes.
+   b. Identifies any missing or implicit screens, modules, calculations, or functions and instructs where to add or refine them for a complete BRS.
+   c. Describes structural improvements: 
+      - Use H1 ONLY for main functional modules (e.g., "# USER MANAGEMENT MODULE")
+      - Use H2 for screens with proper numbering (e.g., "## 1. User Registration Screen")
+      - Use H3 for subsections within screens
+      - NEVER use H1 for screens or H2 for modules - maintain proper hierarchy
+   d. Specifies where to enhance content: 
+      - Each paragraph must be detailed and specific (minimum 3-4 sentences)
+      - All tables must use proper Markdown syntax with headers and separator rows
+      - All tables must have minimum 7 rows of meaningful, varied, realistic sample data
+      - No placeholder or generic content allowed
+   e. Calls out where to insert or update JSON code-block diagrams (\`\`\`json\n{\"brsDiagram\": {"screenName": "Screen Title", "elements": []}}\n\`\`\`) and labels their placement clearly after each screen description.
+   f. Defines the four mandatory sections per screen: 
+      - Numbered H2 title with a clear, descriptive name
+      - Overview paragraph (3-4 sentences minimum) explaining the screen's purpose and functionality
+      - JSON diagram section immediately after overview
+      - Detailed breakdown with three mandatory sections: 
+        * **Inputs**: Table with Field, Type, Validation, Description, Sample Value
+        * **Processes**: Numbered list of specific business logic steps (minimum 3)
+        * **Outputs**: Description of data/UI produced with concrete examples
+   g. Highlights consistency checks: uniform numbering, naming conventions, formatting of lists and tables, and alignment with BRS best practices throughout the entire document.
+   h. Advises addressing ambiguities: flag missing audit trails, permission flows, error-handling states, UI transitions, pagination, search, and authorization mechanisms.
+   i. Anticipates implicit requirements: CRUD operations, user roles, group-based controls, decimal precision, GPS tracking, integration points, and automated processes that a comprehensive BRS should cover.
 
 4. Ensure all bullet lists contain meaningful items, eliminate empty placeholders, and enforce detailed content for every list entry.
 
 5. Do not mention file operations—focus solely on content analysis, structural transformations, and enhancement of business requirements.
 
-6. Make each step precise (2–3 sentences max), unambiguous, and exhaustive so developers have no assumptions left. Think as deeply as possible about every requirement, module, and screen implied by the input document.
+6. Make each step precise (2–3 sentences max), unambiguous, and exhaustive so developers have no assumptions left. Think as deeply as possible about every requirement, module, and screen implied by the input document to make it exceptionally detailed.
 
-This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown format.
-
-Transform and elevate BRS documents by creating a polished, detailed implementation plan in Markdown format.
-
-Your task is to create prompts to generate a Business Requirement Specification (BRS) based on user input and requested changes. Follow these guidelines:
-
-1. Respond with a short sentence starting with "I'll", summarizing your task in under 30 words.
-2. Provide a paragraph titled "Step by step changes:" with a numbered list of precise instructions. Ensure clarity and avoid excessive details.
-3. Clearly indicate changes, such as adding, modifying, or removing sections, maintaining the integrity and specificity of the user's request.
-4. Follow the BRS structure strictly:
-   - Use an H1 title with 4-5 professional words.
-   - Include screens with H2 headings, extra information, diagram (using JSON), and detailed specifications.
-5. Assume and include implicit user requirements not explicitly mentioned.
-6. Incorporate detailed modules for each function, specifying inputs, processes, and outputs, and utilize tables with at least 7 rows where necessary.
-7. Avoid tasks like file creation or saving. Maintain clarity to prevent accidental deletions.
-
-# Steps
-
-- Start with a concise overview of your task.
-- Develop an implementation outline with numbered steps for requested changes.
-- Ensure changes reflect detailed BRS format adherence and completion.
-- Use proper markdown structuring for clarity and effectiveness.
-
-# Output Format
-
-- Provide an implementation overview in Markdown with clear numbered steps.
-- Use precise technical language suitable for both human and AI consumption.
-
-# Notes
-
-- Ensure the document does not feel empty, and consider possible user requirements beyond the explicit instructions.
-- Maintain a complex, detailed, and organized approach to the BRS structure, preventing any minimalist appearance.
-
-Make it even more hardcore, it should be more like this "This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown.
-
-For your reference, read the format of a brs: "Start with a concise, simple H1 title (#) that uses 4-5 words (Example: MIS Control Module), it should sound professional, next, an BRS really just consists of different screens. Most BRS\'s have more than 10 screens - that\'s alot! A BRS is just a document that consists of different screens. Each screen has 4 sections. The first is the H2 (##) Heading that is the name of the screen. It is numbered, so the heading is prefixed with a 1. or 2. or 3. etc. It is a short 2-6 word of what the title does. If the screen is part of a larger screen (by context), the current smaller section is in brackets. Think carefully about using this. This would be like the users page, but the current screen is that of a new transaction, this would be "Users (New User)", other examples include "Sales (List View)", "Sales Manager (New Transaction)" etc. The second part of a screen is some extra information. It is usually a simple paragraph explaining the screen. You may use bold text, italics, bullet points or other visual aids to accompany this paragraph in this second section. It needs to be a brief overview. Use simple language that gets the point across without being unprofessional. The third section is the diagram. If this is a UI based function, then you add a diagram with a json markdown code block containing json {"brsDiagram": {}} The fourth and last section of every screen is the extra data. This is the last section, but it the main part of the screen information. It contains all the details and specifications, you must break down, decompose, and fully explain everything that the screen does, including explaining individual functions, adding tables or bullet points to specify data types, validation, inputs etc. You will also break it down fully for each module, each screen has modules and each models must have a properly explained inputs, processes, and outputs. There will always be some for of a short 1-2  sentence description in 1 or 2 lines too.  This could be adding a table for some sample data, tables to specify form field types, bullet points for extra info, etc. If sample data is there, make sure it is at least 7 rows.  Remember the format of the BRS markdown correctly as outlined above. Strictly follow this. You will not use bullet points to display lists with only 1 item, they should never feel empty. Never use the word description or title with a colon to state the title or description. That is implicit with the heading, subheading, and paragraph format outlined here. Remember to use the format of the BRS markdown correctly as outlined above. EXTEMELY IMPORTANT: You should be expected to think beyond what you were asked to do. You must assume and think hard about what the users requirements are, what the user implicitly might want too and add it in. Be detailed about it. For example, if you are asked to "create a one screen library management system only tracking books using crud for storage". Think about every possible function, module down the the very bottom on what the screen/function might be expected to do. Make sure in the brs document you have broken it down as much as possible. For the example, you should create a screen and have individual modules for each function of the screen, creating book entry, updating book details, deleting books, reading books details, etc. each module should contain the inputs, how its meant to be processed the outputs, you should leave no room for assumption for the developer reading the brs, you should be extremely specific and assume details you doesn't know. in the module example for example, you should explain how the module processes user input and how it displays output and, plans for the ui, for example in the read books module it suggests a plan for example you could add "
-1. The user would be required to input the name of the book they are querying
-2. The system uses CRUD operation read to fetch attributes IBAN, Name, and Blurb of the book
-4. The system should validate the input to ensure the book name exists in the database.
-5. If the book name is found, the system retrieves the book details including IBAN, Name, Blurb, and Tags.
-6. The retrieved details are displayed in a user-friendly format on the UI.
-7. If the book name is not found, the system should display an appropriate error message to the user.
-8. The UI should provide an option to go back to the main menu or perform another search.
-" Understand this example and think hard about the kind of BRS quality I expect. Know that this is an example and it is different depending on each users requests, but understand what I mean by you should go the extra mile to be specific. Remember that previously the user is used to spending 4 weeks detailing everything specifically and working on it. You should not just create a document with simply what they put. It needs to be extremely specific, detailed and follow requirements. Make sure to include sample data in a table where you think it will look good. All tables must have at least 7 rows. You should never have a BRS that feels empty or looks empty or spaced out. it is not meant to be minimalist, it is meant to be detailed to the core. Make sure a BRS never looks empty to anyone." understand and now remember how a brs is structured and write the brs with this mindset`;
+This overview will guide both human reviewers and AI generators to produce a final, polished, detailed BRS in Markdown format. Your plan should be "hardcore" in its thoroughness and expectation of detail, reflecting the need for a BRS that leaves no room for ambiguity. Assume the original document may be a rough draft and your plan is to elevate it to an exemplary BRS.
+`;
 
 const SYSTEM_PROMPT_FILENAME_NANO = `You are an API assistant that generates valid filenames. Based on the provided BRS content summary or original filename, suggest a concise and descriptive filename for the BRS document.
 The filename MUST:
@@ -347,101 +224,43 @@ Expected JSON Output:
 {"suggested_title": "user-authentication-module-brs"}
 `;
 
-const SYSTEM_PROMPT_IMPROVE_BRS = `You are an elite BRS development specialist responsible for creating comprehensive, detailed Business Requirement Specifications that are implementation-ready. You will transform an original document and implementation overview into a meticulously structured, thorough BRS document.
+// NEW System Prompt for Implementing Improvements
+const SYSTEM_PROMPT_IMPLEMENT_IMPROVEMENTS = `You are a specialized BRS (Business Requirements Specification) document editor tasked with meticulously implementing an improvement plan for an existing BRS document.
 
-# CRITICAL SYSTEM REQUIREMENTS
+Your objective:
+1. You will receive the original BRS document content and a detailed improvement plan (overview).
+2. You MUST implement ALL changes, enhancements, and structural adjustments outlined in the improvement plan.
+3. Preserve ALL existing content from the original document UNLESS the improvement plan explicitly directs its modification or removal.
+4. Integrate all new modules, screens, or sections as specified in the plan, ensuring they are fully detailed.
+5. Adhere with extreme precision to standard BRS document structure:
+    - Use H1 headings ONLY for main modules (e.g., "# MODULE NAME").
+    - Use numbered H2 headings for screens (e.g., "## 1. Screen Name", "## 1.1. Sub-Screen Name").
+    - Module titles should be clearly distinguishable from screen names.
+    - Every module MUST have proper heading structure and organization.
+        - Clear, informative paragraphs providing context for each screen.
+    - Diagram sections using the placeholder: \`\`\`json\n{\"brsDiagram\": {"screenName": "Screen Title", "elements": []}}\n\`\`\`
+    - Comprehensive "Extra Data" sections for each screen, detailing:
+        - **Inputs**: Tables with Field, Type, Validation, Description, Sample Value (at least 5 fields per table).
+        - **Processes**: Numbered lists explaining logic, data transformations, and business rules (at least 3 processes per screen).
+        - **Outputs**: Descriptions of resulting data, reports, or UI changes with specific details.
+6. Format every table with proper Markdown syntax:
+   - Use | column1 | column2 | format
+   - Include header row and separator row
+   - Example:
+     | Field | Type | Validation | Description | Sample Value |
+     |-------|------|------------|-------------|--------------|
+     | Name  | Text | Required   | User's name | John Smith   |
+7. Ensure all sample data tables contain at least 7 rows of realistic, varied, and meaningful data.
+8. All bullet lists MUST contain concrete, specific examples - never generic placeholders.
+9. All new and modified content must be extremely detailed, leaving no room for ambiguity, as guided by the improvement plan.
+10. Your final output MUST be the COMPLETE, revised BRS document in Markdown format with proper formatting.
 
-1. INCLUSIVE CONTENT REQUIREMENT: You MUST include EVERY SINGLE topic, subtopic, and sub-subtopic identified in the document. Nothing can be omitted.
-
-2. MULTI-MODULE COMPLETENESS: Generate COMPLETE content for ALL modules. DO NOT focus only on the first module or create inconsistent detail levels across modules.
-
-3. STRUCTURED FORMAT: Follow proper BRS structure:
-   - Start with a concise H1 title
-   - Each screen has numbered H2 headings
-   - Include overview paragraphs, diagram placeholders, and detailed specifications
-   - All sections must be properly nested and hierarchically organized
-
-4. COMPREHENSIVE DETAIL: For EACH module:
-   - Create detailed inputs with field definitions, types, validation rules, and sample data
-   - Specify precise process steps with logic flows and data transformations
-   - Document comprehensive outputs with format specifications
-   - Include 7+ rows in all tables with realistic, varied sample data
-
-5. NO ASSUMPTIONS: Leave no implementation details to interpretation. Document every validation rule, error state, edge case, and business logic consideration.
-
-6. FULL COVERAGE VERIFICATION: Before completing generation, verify that:
-   - ALL topics from the extracted list are represented
-   - ALL modules have consistent, thorough documentation
-   - No sections appear incomplete or less detailed than others
-
-# IMPLEMENTATION GUIDELINES
-
-For EACH module identified in the topics list:
-1. Create a distinct section starting with an H1 heading
-2. Include ALL screens related to that module with H2 headings
-3. Ensure EVERY screen contains:
-   - A numbered heading with a clear title
-   - A detailed overview paragraph explaining purpose and function
-   - A diagram placeholder in JSON format
-   - Comprehensive "Extra Data" detailing inputs, processes, and outputs
-
-For EACH subtopic, create proper H3 headings with detailed explanations.
-For EACH sub-subtopic, create either H4 headings or include as structured content under the relevant subtopic.
-
-EXPAND every element from the extracted topics into a fully developed component with:
-- Comprehensive specifications
-- Data validation rules
-- Process flows
-- Sample data tables with 7+ rows
-- Edge case handling
-
-ENSURE that later modules receive the SAME level of detail as earlier ones.
-
-# OUTPUT REQUIREMENTS
-
-- Start with an H1 heading containing the document title
-- Include ONLY the Markdown content of the BRS document
-- Do not include explanations, introductions, or commentary outside the document itself
-- Every module must be fully developed regardless of its position in the document
-- Content must be technically precise, comprehensive, and implementation-ready
-
-# VERIFICATION PROCESS
-
-Before submission, verify that:
-1. EVERY topic from the extracted list has been expanded into a detailed component
-2. ALL modules have consistent, comprehensive coverage
-3. No sections appear truncated or less detailed than others
-4. The document meets all structural and formatting requirements
-5. Sample data tables have 7+ rows of realistic, varied data
-
-OUTPUT ONLY THE IMPROVED BRS DOCUMENT IN MARKDOWN. NO EXPLANATIONS, ONLY CONTENT.`;
-
-// System Prompt for detailed single-module BRS section generation
-const SYSTEM_PROMPT_MODULE = `You are a high-precision BRS module generator specializing in creating comprehensive, detailed Markdown sections for business modules based on specified titles and subtopics.
-
-Your output MUST:
-1. Start with a numbered H2 heading corresponding to the module sequence and title (e.g., "## 1. Module Title").
-2. Provide a thorough overview paragraph (2-5 sentences) explaining the purpose, scope, and importance of the module within the overall system.
-3. Include a JSON diagram placeholder in a Markdown code fence:
-\`\`\`json
-{"brsDiagram": {}}
-\`\`\`
-4. Provide an "### Extra Data" section containing:
-   - **Inputs**: A detailed Markdown table with at least 7 rows, each row specifying Field, Type, Validation, Description, and Sample Value.
-   - **Processes**: A comprehensive numbered list detailing precisely how each subtopic and sub-subtopic is processed or validated within the module, with each point containing 1-3 sentences of implementation details.
-   - **Outputs**: A detailed list describing output data formats, validation procedures, error handling, and display formatting for each process.
-5. For each subtopic mentioned in the input:
-   - Create appropriate H3 headings (e.g., "### 1.1 Subtopic Name")
-   - Detail its specific purpose and functionality
-   - Include any necessary tables, lists, or validation rules
-   - Ensure at least 7 rows of sample data in any tables
-6. For each sub-subtopic:
-   - Create appropriate H4 headings or well-structured sections under the relevant subtopic
-   - Provide comprehensive implementation details with no ambiguity
-   - Include ALL requirements mentioned in the original document and implementation overview
-7. Ensure all content is technically precise, comprehensive, and follows best practices for BRS documentation.
-
-Output only the Markdown for this module section with no additional commentary or explanation. Your output should be detailed enough that developers can implement the module with minimal clarification needed.`;
+CRITICAL INSTRUCTIONS:
+- Your response must consist SOLELY of the entire updated BRS document content.
+- Do NOT include any introductory phrases, summaries, explanations, or comments about your changes. Only the raw Markdown of the improved document.
+- Follow the improvement plan with absolute fidelity. If the plan is detailed, your implementation must be equally detailed.
+- The goal is a "hardcore," production-ready BRS document.
+`;
 
 // Progress tracking interface for client feedback
 import {
@@ -522,25 +341,22 @@ export async function POST(request: NextRequest) {
       // Define the workflow steps in the same order as the UI expects:
       // 1. "Upload file"
       // 2. "Parse PDF to Markdown" (conditional)
-      // 3. "Determining file name"
-      // 4. "Creating file"
-      // 5. "Generating content"
+      // 3. "Generate file name"
+      // 4. "Create file record"
+      // 5. "Generate BRS improvement plan"
+      // 6. "Implement BRS improvements"
+      // 7. "Save final document"
       const stepMapping: Record<
         string,
         { uiStep: string; displayName?: string }
       > = {
         upload: { uiStep: "upload", displayName: "Upload file" },
         convert: { uiStep: "convert", displayName: "Parse PDF to Markdown" },
-        analyze: {
-          uiStep: "upload",
-          displayName: "Analyzing document structure",
-        },
-        topics: { uiStep: "topics", displayName: "Extracting document topics" },
         filename: { uiStep: "filename", displayName: "Generate file name" },
-        save: { uiStep: "save", displayName: "Create file" },
-        overview: { uiStep: "overview", displayName: "Plan overview" },
-        improve: { uiStep: "improve", displayName: "Generate content" },
-        "final-save": { uiStep: "final-save", displayName: "Save to file" },
+        save: { uiStep: "save", displayName: "Create file record" },
+        overview: { uiStep: "overview", displayName: "Generate BRS improvement plan" },
+        improve: { uiStep: "improve", displayName: "Implement BRS improvements" },
+        "final-save": { uiStep: "final-save", displayName: "Save final document" },
       };
 
       // Apply the mapping
@@ -665,47 +481,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Continue with the rest of the processing
-      await addProgress("analyze", "started", "Analyzing document structure");
-      console.log(`BRS Improve: Starting process for "${originalFilename}"`);
-      await addProgress(
-        "analyze",
-        "completed",
-        "Document structure analyzed completely"
-      );
-
-      // NEW STEP: Extract topics from the document
-      await addProgress("topics", "started", "Extracting document topics");
-      console.log("BRS Improve: Extracting topics from document...");
-
-      let extractedTopics;
-      let processedTopics = "";
-      try {
-        extractedTopics = await extractTopics(markdownContent);
-        processedTopics = processTopicsForPrompt(extractedTopics);
-        await addProgress(
-          "topics",
-          "completed",
-          "Topics extracted successfully"
-        );
-        console.log("BRS Improve: Topics extracted successfully");
-      } catch (error) {
-        console.error("Failed to extract topics:", error);
-        await addProgress(
-          "topics",
-          "failed",
-          "Failed to extract document topics"
-        );
-        // Continue with the process even if topic extraction fails
-        extractedTopics = JSON.stringify({ items: [] });
-        processedTopics =
-          "Error extracting topics. Please ensure comprehensive coverage of all document sections.";
-        console.log(
-          "BRS Improve: Proceeding with empty/error topics after failure:",
-          processedTopics
-        ); // Added log
-      }
-
       // 1. First step: Upload file is already complete at this point
 
       // 2. Generate Filename
@@ -735,7 +510,7 @@ export async function POST(request: NextRequest) {
           const parsedResponse = JSON.parse(nanoResponseJson);
           if (
             parsedResponse.suggested_title &&
-            typeof parsedResponse.suggested_title === "string"
+            typeof parsedResponse.ssuggested_title === "string"
           ) {
             suggestedTitle = parsedResponse.suggested_title
               .trim()
@@ -793,8 +568,6 @@ export async function POST(request: NextRequest) {
         }
       );
 
-      // For file creation, a 200 response with error message means file exists
-      // This is not a fatal error - we'll handle it by generating an alternative name
       let createFileResult;
       try {
         createFileResult = await createFileResponse.json();
@@ -808,7 +581,6 @@ export async function POST(request: NextRequest) {
         return;
       }
 
-      // Only treat it as a fatal error if it's not a file-exists error
       if (
         !createFileResponse.ok &&
         !/already exists/i.test(createFileResult?.message || "")
@@ -828,8 +600,6 @@ export async function POST(request: NextRequest) {
           ? createFileResult.file_name
           : undefined;
 
-      // Handle name collision - look for specific error message regardless of success flag
-      // First, check if message property exists, then check if it contains 'already exists'
       if (
         createFileResult?.message &&
         typeof createFileResult.message === "string" &&
@@ -839,7 +609,6 @@ export async function POST(request: NextRequest) {
           `BRS Improve: Filename "${finalFilename}" unavailable: ${createFileResult.message}`
         );
 
-        // Send a progress update indicating file name collision is being handled
         await addProgress(
           "filename",
           "started",
@@ -887,14 +656,12 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
           `BRS Improve: Retrying with new filename: "${finalFilename}"`
         );
 
-        // Update progress to indicate we're trying with a new filename
         await addProgress(
           "filename",
           "completed",
           `Alternative file name generated: ${finalFilename}`
         );
 
-        // Start save step again with the new filename
         await addProgress(
           "save",
           "started",
@@ -907,7 +674,6 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
           body: JSON.stringify({ file_name: finalFilename }),
         });
 
-        // Properly handle retry failures with clear error messages
         if (!retryResponse.ok) {
           try {
             const retryErr = await retryResponse.json();
@@ -927,7 +693,6 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
           }
         }
 
-        // Parse and validate the retry result
         try {
           const retryResult = await retryResponse.json();
           if (!retryResult.file_name) {
@@ -938,14 +703,12 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
             return;
           }
 
-          // Mark save step as completed with the new filename
           await addProgress(
             "save",
             "completed",
             `File created successfully with alternative name: ${finalFilename}`
           );
 
-          // Update fileId with the new file name
           fileId = retryResult.file_name;
         } catch (parseError) {
           const errorMsg = "Failed to parse retry response data";
@@ -977,31 +740,31 @@ For example, if "inventory-management" is taken, suggest something like "stock-c
         "File record created successfully"
       );
 
-      // 4. Plan Overview - Generate Implementation Overview with extracted topics
-      await addProgress("overview", "started", "Creating document blueprint");
-      console.log("BRS Improve: Generating implementation overview...");
+      // 4. Generate BRS Improvement Plan (Overview)
+      await addProgress("overview", "started", "Generating BRS improvement plan");
+      console.log("BRS Improve: Generating BRS improvement plan...");
 
-      // Include extracted topics in the prompt
-      const overviewPrompt = `
-Here is the original markdown content:
+      // New: Get module names from the document first
+      const moduleNames = await getModuleNamesFromDocument(markdownContent);
+      let modulesPromptSection = "";
+      if (moduleNames.length > 0) {
+        modulesPromptSection = `\n\nThe following main modules were identified in the document and MUST be explicitly addressed and planned for in your step-by-step changes:\n- ${moduleNames.join("\n- ")}`;
+        console.log("BRS Improve: Adding identified modules to overview prompt:", modulesPromptSection);
+      } else {
+        console.log("BRS Improve: No distinct modules identified to add to overview prompt, or document was too short.");
+      }
 
-${markdownContent}
-
-The following topics have been extracted from the document and MUST be included in your implementation plan:
-
-${processedTopics}
-
-IMPORTANT INSTRUCTION: Your implementation plan must include specific steps for EVERY topic and subtopic listed above. Each topic represents a key module that must be fully documented in the BRS. Do not focus only on the first module - ensure equal detail and comprehensive coverage for ALL modules.`;
+      const overviewUserPrompt = `Here is the BRS document content that needs improvement:\n\n${markdownContent}\n${modulesPromptSection}\n\nPlease generate a detailed, step-by-step implementation plan to enhance this document according to best practices for BRS. Ensure the plan is comprehensive and covers all necessary structural and content improvements, paying specific attention to the modules listed above if any were identified. The plan should be actionable and ready for an AI to execute.`;
 
       const overviewContent = await callOpenAI(
         "o4-mini",
         SYSTEM_PROMPT_OVERVIEW,
-        overviewPrompt,
-        false // o4-mini is a reasoning model, it does not support temperature or max tokens
+        overviewUserPrompt,
+        false,
       );
 
-      if (!overviewContent) {
-        const errorMsg = "Failed to generate implementation overview";
+      if (!overviewContent || overviewContent.length < 100) {
+        const errorMsg = "Failed to generate a valid BRS improvement plan. The plan was too short or empty.";
         await addProgress("overview", "failed", errorMsg);
         await sendUpdate({ type: "error", data: { message: errorMsg } });
         return;
@@ -1010,247 +773,229 @@ IMPORTANT INSTRUCTION: Your implementation plan must include specific steps for 
       await addProgress(
         "overview",
         "completed",
-        "Document blueprint created successfully"
+        "BRS improvement plan generated successfully"
       );
-      console.log("BRS Improve: Overview generated.");
+      console.log("BRS Improve: BRS improvement plan generated.");
 
-      // 5. Generate Improved BRS Content (Chunked by module)
-      await addProgress(
-        "improve",
-        "started",
-        "Generating improved BRS content per module"
-      );
-      console.log("BRS Improve: Generating improved BRS content per module...");
+      // 5. Implement BRS Improvements
+      await addProgress("improve", "started", "Implementing BRS improvements");
+      console.log("BRS Improve: Implementing BRS improvements...");
 
       let improvedBrsContent = "";
+      
+      // Function to validate BRS content quality
+      const validateBrsContent = (content: string, originalModules: string[]): {
+        isValid: boolean;
+        reason?: string;
+        missingModules?: string[];
+      } => {
+        // Basic length check
+        if (content.length < markdownContent.length * 0.8) {
+          return { isValid: false, reason: "Content is shorter than expected" };
+        }
 
-      try {
-        // Determine document title
-        const documentTitle = slugToTitle(suggestedTitle);
-        improvedBrsContent += `# ${documentTitle}\n\n`;
+        // Check for proper Markdown formatting
+        const hasProperHeadings = content.includes("# ") && content.includes("## ");
+        if (!hasProperHeadings) {
+          return { isValid: false, reason: "Missing proper headings structure" };
+        }
 
-        // Parse extracted topics JSON
-        const topicsList = JSON.parse(extractedTopics).items as Array<{
-          topic: string;
-          subtopics: any[];
-        }>;
+        // Check for presence of tables
+        const hasMarkdownTables = content.includes("|----") || content.includes("| --- ");
+        if (!hasMarkdownTables) {
+          return { isValid: false, reason: "Missing properly formatted tables" };
+        }
 
-        // Iterate through each module (topic) using proper async handling
-        console.log(`BRS Improve: Starting generation for ${topicsList.length} modules...`);
-        
-        // Define helper function outside the try-catch block to comply with strict mode
-        const generateModuleContent = async (moduleItem: { topic: string; subtopics: any[] }, index: number): Promise<string | null> => {
-          try {
-            console.log(`BRS Improve: Generating content for module ${index + 1}/${topicsList.length}: ${moduleItem.topic}`);
-            await sendUpdate({
-              type: "progress",
-              data: {
-                stepId: "improve",
-                status: "progress",
-                message: `Generating module ${index + 1}/${topicsList.length}: ${moduleItem.topic}`,
-                timestamp: Date.now(),
-              }
-            });
-            
-            // Enhanced module prompt with more context
-            const modulePrompt = `
-Implementation Overview:
-${overviewContent}
+        // Check for JSON diagrams
+        const hasDiagrams = content.includes('```json') && content.includes('brsDiagram');
+        if (!hasDiagrams) {
+          return { isValid: false, reason: "Missing JSON diagrams" };
+        }
 
-Original Document:
-${markdownContent}
-
-Module Title: "${moduleItem.topic}" (Module ${index + 1} of ${topicsList.length})
-
-Subtopics and Sub-Subtopics: 
-${JSON.stringify(moduleItem.subtopics, null, 2)}
-
-Important Instructions:
-1. Create a DETAILED and COMPLETE section for this module
-2. Include ALL subtopics and sub-subtopics listed above
-3. Ensure each item has comprehensive specifications
-4. This module must be implemented with the same detail level regardless of its position in the document
-`;
-            
-            // Try first with o4-mini for best results with high reasoning
-            try {
-              const miniResponse = await openai.chat.completions.create({
-                model: "o4-mini",
-                reasoning_effort: "high",
-                messages: [
-                  { role: "system", content: SYSTEM_PROMPT_MODULE },
-                  { role: "user", content: modulePrompt }
-                ]
-              });
-              
-              const content = miniResponse.choices[0]?.message?.content;
-              if (content && content.length > 300) {
-                console.log(`BRS Improve: Successfully generated module ${index + 1} with o4-mini (${content.length} chars)`);
-                return content;
-              }
-              console.log(`BRS Improve: o4-mini response too short (${content?.length || 0} chars), falling back to gpt-4o`);
-            } catch (err) {
-              console.warn(`BRS Improve: o4-mini generation failed for module ${index + 1}, falling back to gpt-4o:`, err);
-            }
-            
-            // Fall back to gpt-4o with higher temperature for richer detail
-            const moduleContent = await callOpenAI(
-              "gpt-4o",
-              SYSTEM_PROMPT_MODULE,
-              modulePrompt,
-              false,
-              0.7,
-              6000
-            );
-            
-            if (!moduleContent || moduleContent.length < 300) {
-              throw new Error(`Generated content for module ${index + 1} is too short or empty`);
-            }
-            
-            console.log(`BRS Improve: Successfully generated module ${index + 1} with gpt-4o (${moduleContent.length} chars)`);
-            return moduleContent;
-          } catch (error) {
-            console.error(`BRS Improve: Failed to generate module ${index + 1}: ${moduleItem.topic}`, error);
-            return null;
-          }
-        };
-        
-        // Process modules sequentially to ensure reliable completion and avoid token limits
-        for (let i = 0; i < topicsList.length; i++) {
-          const moduleContent = await generateModuleContent(topicsList[i], i);
+        // Check for module coverage if modules were identified
+        if (originalModules.length > 0) {
+          const contentUpperCase = content.toUpperCase();
+          const missingModules = originalModules.filter(module => {
+            // Convert module name to uppercase for case-insensitive comparison
+            const moduleUpperCase = module.toUpperCase();
+            return !contentUpperCase.includes(moduleUpperCase);
+          });
           
-          if (moduleContent) {
-            improvedBrsContent += moduleContent + "\n\n";
-          } else {
-            // If module generation failed, create a minimal placeholder to maintain structure
-            const placeholderContent = `## ${i + 1}. ${topicsList[i].topic}\n\nThis module requires further detailed specification.\n\n\`\`\`json\n{"brsDiagram": {}}\n\`\`\`\n\n### Extra Data\n\n**Note:** This module's content needs to be expanded with proper inputs, processes, and outputs.\n\n`;
-            improvedBrsContent += placeholderContent;
-            
-            // Try with a simplified approach as final fallback
-            try {
-              const fallbackContent = await callOpenAI(
-                "gpt-4.1-nano",
-                `Create a simple BRS module section for "${topicsList[i].topic}" with basic headings, a diagram placeholder, and minimal structure.`,
-                `Module: ${topicsList[i].topic}\nSubtopics: ${JSON.stringify(topicsList[i].subtopics)}`,
-                false,
-                1.0,
-                2000
-              );
-              
-              if (fallbackContent && fallbackContent.length > 100) {
-                // Replace the placeholder with the fallback content
-                improvedBrsContent = improvedBrsContent.replace(placeholderContent, fallbackContent + "\n\n");
-              }
-            } catch (fallbackErr) {
-              console.error(`BRS Improve: Fallback generation also failed for module ${i + 1}`, fallbackErr);
-            }
+          if (missingModules.length > 0) {
+            return { 
+              isValid: false, 
+              reason: "Missing some original modules", 
+              missingModules 
+            };
           }
         }
 
-        console.log("BRS Improve: All module sections generated successfully");
-      } catch (err) {
-        console.error("Error generating improved BRS per module:", err);
-        
-        // Implement a more robust fallback strategy similar to the old API
-        console.log("BRS Improve: Module-by-module generation failed, implementing robust fallback strategy");
-        
+        return { isValid: true };
+      };
+
+      // Pass moduleNames to the implementation prompt as well
+      let modulesForImplementationPrompt = "";
+      if (moduleNames.length > 0) {
+        modulesForImplementationPrompt = `\n\nCRITICAL REMINDER: The original document contained these main modules: [${moduleNames.join(", ")}]. Your output MUST include fully developed content for ALL these modules, as guided by the improvement plan. Do not omit or truncate any module. Each module should be its own H1 heading.`;
+      }
+
+      // Enhanced implementation prompt with more specific formatting instructions
+      const implementUserPrompt = `Original BRS Document Content:\n${markdownContent}\n\nImprovement Plan (Overview):\n${overviewContent}\n${modulesForImplementationPrompt}\n
+CRITICAL FORMATTING INSTRUCTIONS:
+1. Use H1 headings (# MODULE NAME) ONLY for main modules - these are the highest-level organizational units
+2. Use H2 headings (## 1. Screen Name) for screens within modules
+3. Every table must have properly formatted headers with | separators and a separator row
+4. All bullet points must contain specific, concrete information - never generic placeholders
+5. Module names should be clearly distinguishable from screen names
+6. Each screen must have:
+   - A descriptive paragraph explaining its purpose
+   - A JSON diagram in code block format
+   - Input/Process/Output sections with detailed content
+   - At least one properly formatted table with 7+ rows of realistic data
+
+Please apply all improvements detailed in the plan to the original document and return the COMPLETE, revised BRS document. Ensure thorough coverage of every aspect.`;
+
+      console.log("BRS Improve: Sending implementation prompt to model");
+      
+      try {
+        // First attempt with o4-mini with high reasoning effort
         await sendUpdate({
           type: "progress",
           data: {
             stepId: "improve",
             status: "progress",
-            message: "Module generation failed, implementing fallback strategy",
+            message: "Processing BRS content with advanced model...",
             timestamp: Date.now(),
           }
         });
         
-        // Strategy 1: Try with o4-mini for the full document
-        try {
-          console.log("BRS Improve: Attempting fallback with o4-mini and high reasoning");
-          
-          const response = await openai.chat.completions.create({
-            model: "o4-mini",
-            reasoning_effort: "high",
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT_IMPROVE_BRS },
-              { role: "user", content: overviewPrompt }
-            ]
-          });
-          
-          const content = response.choices[0]?.message?.content;
-          if (content && typeof content === 'string' && content.length > 1000) {
-            console.log(`BRS Improve: Successfully generated full document with o4-mini (${content.length} chars)`);
-            improvedBrsContent = content;
-            return;
+        const improveResponse = await openai.chat.completions.create({
+          model: "o4-mini",
+          reasoning_effort: "high", // Use high reasoning for better output
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT_IMPLEMENT_IMPROVEMENTS },
+            { role: "user", content: implementUserPrompt },
+          ],
+        });
+        
+        const o4MiniResult = improveResponse.choices[0].message?.content ?? "";
+        
+        // Validate the content quality
+        const validation = validateBrsContent(o4MiniResult, moduleNames);
+        
+        if (!validation.isValid) {
+          console.warn(
+            `BRS Improve: o4-mini implementation produced invalid content. Reason: ${validation.reason}`
+          );
+          if (validation.missingModules) {
+            console.warn(`Missing modules: ${validation.missingModules.join(', ')}`);
           }
-          console.log("BRS Improve: o4-mini fallback failed, trying next approach");
-        } catch (reasoningError) {
-          console.error("BRS Improve: o4-mini fallback failed with error:", reasoningError);
-          // Continue to next fallback
+          throw new Error(`o4-mini produced invalid content: ${validation.reason}`);
         }
         
-        // Strategy 2: Extract topics again and try to generate content for all at once
-        try {
-          console.log("BRS Improve: Attempting to regenerate content with all topics");
-          
-          // Re-extract topics if needed or use the ones we have
-          let moduleNames: string[] = [];
-          try {
-            // Try to use the extracted topics we already have
-            if (extractedTopics && typeof extractedTopics === 'string') {
-              const parsedTopics = JSON.parse(extractedTopics);
-              if (parsedTopics.items && Array.isArray(parsedTopics.items)) {
-                moduleNames = parsedTopics.items.map((item: { topic: string }) => item.topic);
-              }
-            }
-          } catch (parseError) {
-            console.warn("Failed to parse extracted topics for fallback:", parseError);
-            // Default empty list will be used if parsing fails
+        improvedBrsContent = o4MiniResult; // Assign if valid
+        console.log("BRS Improve: BRS improvements successfully implemented with o4-mini.");
+      } catch (error: any) {
+        console.error("BRS Improve: o4-mini implementation failed:", error.message);
+        await sendUpdate({
+          type: "progress",
+          data: {
+            stepId: "improve",
+            status: "progress",
+            message: "Primary implementation failed, attempting fallback with gpt-4o...",
+            timestamp: Date.now(),
           }
-          
-          // Create a comprehensive prompt that explicitly mentions all modules
-          const allModulesPrompt = `
-${overviewPrompt}
+        });
 
-CRITICAL INSTRUCTION: You MUST include comprehensive content for ALL of these modules:
-${JSON.stringify(moduleNames, null, 2)}
+        // Enhanced fallback attempt with gpt-4o
+        try {
+          // Add more specific instructions in the fallback case
+          const fallbackPrompt = `${implementUserPrompt}\n\nATTENTION: The previous attempt to improve this BRS failed. Please ensure your response:
+1. Includes ALL original modules: [${moduleNames.join(", ")}]
+2. Has properly formatted markdown tables with header row and separator row
+3. Contains detailed JSON diagrams for each screen
+4. Provides comprehensive Input/Process/Output sections
+5. Maintains clear hierarchy between modules (H1) and screens (H2)`;
 
-Do NOT focus only on the first module. Generate COMPLETE sections for EACH module listed above.
-Each module MUST have proper structure with headings, diagrams, and detailed specifications.`;
-
-          improvedBrsContent = (await callOpenAI(
+          const gpt4oResult = await callOpenAI(
             "gpt-4o",
-            SYSTEM_PROMPT_IMPROVE_BRS,
-            allModulesPrompt,
+            SYSTEM_PROMPT_IMPLEMENT_IMPROVEMENTS,
+            fallbackPrompt,
             false,
-            0.7,
-            12000
-          )) as string;
+            0.2, // Lower temp for more consistent results
+            8000  // Max tokens for potentially large document
+          );
+
+          // Validate the fallback result as well
+          const fallbackValidation = validateBrsContent(gpt4oResult || "", moduleNames);
           
-          if (!improvedBrsContent || improvedBrsContent.length < 1000) {
-            throw new Error("Generated content is too short or empty");
+          if (!fallbackValidation.isValid) {
+            console.error(
+              `BRS Improve: gpt-4o fallback also produced invalid content. Reason: ${fallbackValidation.reason}`
+            );
+            throw new Error(`gpt-4o fallback also produced invalid content: ${fallbackValidation.reason}`);
           }
           
-          console.log(`BRS Improve: Successfully generated content with combined approach (${improvedBrsContent.length} chars)`);
+          improvedBrsContent = gpt4oResult || ""; // Assign if valid
+          console.log("BRS Improve: BRS improvements successfully implemented with gpt-4o fallback.");
+        } catch (fallbackError: any) {
+          console.error("BRS Improve: gpt-4o fallback implementation also failed:", fallbackError.message);
+          const errorMsg = "Failed to implement BRS improvements after fallback: " + fallbackError.message;
+          await addProgress("improve", "failed", errorMsg);
+          await sendUpdate({ type: "error", data: { message: errorMsg } });
           return;
-        } catch (combinedError) {
-          console.error("BRS Improve: Combined approach failed:", combinedError);
         }
+      }
+
+      await addProgress(
+        "improve",
+        "completed",
+        "BRS improvements implemented successfully"
+      );
+      console.log("BRS Improve: BRS improvement generation complete.");
+
+      // Perform final quality check on the improved BRS content
+      const finalQualityCheck = (content: string): boolean => {
+        // Check if content looks like markdown (has # headings)
+        if (!content.includes("# ")) {
+          console.error("BRS Improve: Final content doesn't appear to be properly formatted markdown");
+          return false;
+        }
+
+        // Check that content is substantial
+        if (content.length < 2000) {
+          console.error("BRS Improve: Final content is suspiciously short:", content.length);
+          return false;
+        }
+
+        // Check for proper table formatting
+        const tableHeaderCount = (content.match(/\|[-]{3,}\|/g) || []).length;
+        if (tableHeaderCount < 3) { // Expect at least 3 tables in a good BRS
+          console.warn("BRS Improve: Final content may be missing properly formatted tables");
+          // Not failing on this, just a warning
+        }
+
+        // Check for common BRS structural elements
+        const hasInputs = content.toLowerCase().includes("**inputs**");
+        const hasProcesses = content.toLowerCase().includes("**processes**");
+        const hasOutputs = content.toLowerCase().includes("**outputs**");
         
-        // Final fallback: Traditional monolithic generation
-        console.log("BRS Improve: Falling back to standard full-document generation");
-        improvedBrsContent = (await callOpenAI(
-          "gpt-4o",
-          SYSTEM_PROMPT_IMPROVE_BRS,
-          overviewPrompt,
-          false,
-          0.5,
-          8192
-        )) as string;
+        if (!hasInputs || !hasProcesses || !hasOutputs) {
+          console.error("BRS Improve: Final content is missing key IPO components");
+          return false;
+        }
+
+        return true;
+      };
+
+      // Apply the final quality check
+      if (!finalQualityCheck(improvedBrsContent)) {
+        console.error("BRS Improve: Final content failed quality check, but proceeding anyway");
+        // We're still proceeding, but logging the issue for monitoring
       }
 
       // 6. Save to file (Save Improved BRS Content)
-      await addProgress("final-save", "started", "Saving to file");
+      await addProgress("final-save", "started", "Saving final document");
       console.log("BRS Improve: Saving improved BRS content to file...");
 
       const writeDataPayload = {
@@ -1285,7 +1030,6 @@ Each module MUST have proper structure with headings, diagrams, and detailed spe
       await addProgress("final-save", "completed", "File saved successfully");
       console.log("BRS Improve: Improved BRS content saved.", writeDataResult);
 
-      // 6. Save conversation record of this improvement
       try {
         const conversationTitle = `BRS Improvement: ${suggestedTitle}`;
         const conversationPayload = {
@@ -1325,7 +1069,6 @@ You can view the improved document in the document library.`,
         console.error("BRS Improve: Failed to save conversation record:", e);
       }
 
-      // Send final success message
       await sendUpdate({
         type: "result",
         data: {
@@ -1363,7 +1106,7 @@ You can view the improved document in the document library.`,
         }
       } catch (e) {
         console.error("BRS Import: Error closing stream:", e);
-        isWriterClosed = true; // Mark as closed anyway to prevent further attempts
+        isWriterClosed = true;
       }
     }
   };
